@@ -9,6 +9,11 @@ type Dialect interface {
 	// returns "$1", "$2", etc.
 	Placeholder(index int) string
 
+	// QuoteIdent quotes an identifier (table name, column name) to safely
+	// handle SQL reserved words. MySQL uses backticks; PostgreSQL uses
+	// double quotes.
+	QuoteIdent(name string) string
+
 	// UseReturning reports whether INSERT should use a RETURNING clause
 	// to retrieve the auto-generated primary key (PostgreSQL) rather
 	// than relying on LastInsertId (MySQL).
@@ -29,11 +34,13 @@ var PostgreSQL Dialect = postgresDialect{}
 type mysqlDialect struct{}
 
 func (mysqlDialect) Placeholder(_ int) string        { return "?" }
+func (mysqlDialect) QuoteIdent(name string) string    { return "`" + name + "`" }
 func (mysqlDialect) UseReturning() bool               { return false }
 func (mysqlDialect) ReturningClause(_ string) string   { return "" }
 
 type postgresDialect struct{}
 
 func (postgresDialect) Placeholder(index int) string       { return fmt.Sprintf("$%d", index) }
+func (postgresDialect) QuoteIdent(name string) string      { return `"` + name + `"` }
 func (postgresDialect) UseReturning() bool                  { return true }
-func (postgresDialect) ReturningClause(pk string) string    { return " RETURNING " + pk }
+func (postgresDialect) ReturningClause(pk string) string    { return ` RETURNING "` + pk + `"` }

@@ -65,7 +65,25 @@ func TestPostgreSQLUseReturning(t *testing.T) {
 func TestPostgreSQLReturningClause(t *testing.T) {
 	t.Parallel()
 
-	if got := orm.PostgreSQL.ReturningClause("id"); got != " RETURNING id" {
-		t.Errorf("PostgreSQL.ReturningClause(\"id\") = %q, want %q", got, " RETURNING id")
+	want := ` RETURNING "id"`
+	if got := orm.PostgreSQL.ReturningClause("id"); got != want {
+		t.Errorf("PostgreSQL.ReturningClause(\"id\") = %q, want %q", got, want)
+	}
+}
+
+func TestMySQLQuoteIdent(t *testing.T) {
+	t.Parallel()
+
+	if got := orm.MySQL.QuoteIdent("order"); got != "`order`" {
+		t.Errorf("QuoteIdent = %q, want %q", got, "`order`")
+	}
+}
+
+func TestPostgreSQLQuoteIdent(t *testing.T) {
+	t.Parallel()
+
+	want := `"order"`
+	if got := orm.PostgreSQL.QuoteIdent("order"); got != want {
+		t.Errorf("QuoteIdent = %q, want %q", got, want)
 	}
 }
