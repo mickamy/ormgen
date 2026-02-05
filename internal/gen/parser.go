@@ -122,6 +122,11 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 		return FieldInfo{}, true
 	}
 
+	// Skip slice and pointer-to-struct fields (likely relations, not columns).
+	if isCompositeType(field.Type) {
+		return FieldInfo{}, true
+	}
+
 	goType := typeToString(field.Type)
 
 	// Defaults: column inferred from field name, ID field is primary key.
@@ -228,4 +233,29 @@ func typeToString(expr ast.Expr) string {
 	default:
 		return fmt.Sprintf("%T", expr)
 	}
+}
+
+// isCompositeType returns true for slice, pointer-to-struct, and struct value
+// types that should be auto-skipped as DB columns (they are likely relation
+// fields). Exported identifiers (e.g. User, Post) are treated as struct types.
+// Builtin types (int, string, bool, etc.) are lowercase and pass through.
+func isCompositeType(expr ast.Expr) bool {
+	switch t := expr.(type) {
+	case *ast.ArrayType:
+		return true // []T or [N]T
+	case *ast.Ident:
+		// Exported ident in same package = struct type (User, Post, etc.)
+		// Builtin types (int, string, bool, ...) are lowercase and won't match.
+		return t.IsExported()
+	case *ast.StarExpr:
+		// *T where T is a struct name (not *string etc.)
+		if ident, ok := t.X.(*ast.Ident); ok {
+			return ident.IsExported()
+		}
+		// *pkg.Type
+		if _, ok := t.X.(*ast.SelectorExpr); ok {
+			return true
+		}
+	}
+	return false
 }

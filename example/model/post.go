@@ -7,5 +7,5 @@ type Post struct {
 	UserID int
 	Title  string
 	Body   string
-	User   *User `db:"-" rel:"belongs_to,foreign_key:user_id"`
+	User   *User `rel:"belongs_to,foreign_key:user_id"`
 }

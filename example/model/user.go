@@ -9,5 +9,5 @@ type User struct {
 	Name      string
 	Email     string
 	CreatedAt time.Time
-	Posts     []Post `db:"-" rel:"has_many,foreign_key:user_id"`
+	Posts     []Post `rel:"has_many,foreign_key:user_id"`
 }
