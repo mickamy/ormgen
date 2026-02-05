@@ -4,7 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"
 CMD_DIR = ./
 
-.PHONY: all build install uninstall clean test lint
+.PHONY: all build install uninstall clean test lint up up-d down
 
 all: build
 
@@ -44,3 +44,12 @@ lint:
 		exit 1; \
 	}
 	golangci-lint run
+
+up:
+	docker compose up
+
+up-d:
+	docker compose up -d --wait
+
+down:
+	docker compose down
