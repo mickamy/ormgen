@@ -43,48 +43,56 @@ func (s *StructInfo) PrimaryKeyField() (*FieldInfo, error) {
 	return pk, nil
 }
 
-// Parse reads the Go file at path, finds the struct named typeName,
-// and returns its StructInfo.
-func Parse(filePath string, typeName string) (*StructInfo, error) {
+// Parse reads the Go file at path and returns StructInfo for every struct
+// that has at least one field with a db tag.
+func Parse(filePath string) ([]*StructInfo, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filePath, nil, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse file: %w", err)
 	}
 
-	info := &StructInfo{
-		Name:    typeName,
-		Package: file.Name.Name,
-	}
+	pkg := file.Name.Name
+	var infos []*StructInfo
 
-	var found bool
 	ast.Inspect(file, func(n ast.Node) bool {
 		ts, ok := n.(*ast.TypeSpec)
-		if !ok || ts.Name.Name != typeName {
+		if !ok {
 			return true
 		}
 
 		st, ok := ts.Type.(*ast.StructType)
 		if !ok {
-			return false
+			return true
 		}
 
-		found = true
-		for _, field := range st.Fields.List {
-			fi, skip := parseField(field)
-			if skip {
-				continue
-			}
-			info.Fields = append(info.Fields, fi)
+		fields := parseStructFields(st)
+		if len(fields) == 0 {
+			return true
 		}
-		return false
+
+		infos = append(infos, &StructInfo{
+			Name:    ts.Name.Name,
+			Package: pkg,
+			Fields:  fields,
+		})
+		return true
 	})
 
-	if !found {
-		return nil, fmt.Errorf("type %s not found in %s", typeName, filePath)
-	}
+	return infos, nil
+}
 
-	return info, nil
+// parseStructFields extracts db-tagged fields from an AST struct type.
+func parseStructFields(st *ast.StructType) []FieldInfo {
+	fields := make([]FieldInfo, 0, len(st.Fields.List))
+	for _, field := range st.Fields.List {
+		fi, skip := parseField(field)
+		if skip {
+			continue
+		}
+		fields = append(fields, fi)
+	}
+	return fields
 }
 
 func parseField(field *ast.Field) (FieldInfo, bool) {

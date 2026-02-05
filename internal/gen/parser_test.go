@@ -13,64 +13,77 @@ func testdataPath(name string) string {
 	return filepath.Join(filepath.Dir(file), "testdata", name)
 }
 
-func TestParseUser(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("user.go"), "User")
+	infos, err := gen.Parse(testdataPath("user.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if info.Name != "User" {
-		t.Errorf("Name = %q, want %q", info.Name, "User")
-	}
-	if info.Package != "testdata" {
-		t.Errorf("Package = %q, want %q", info.Package, "testdata")
+	if len(infos) != 2 {
+		t.Fatalf("len(infos) = %d, want 2", len(infos))
 	}
 
-	// 7 db fields (Posts is db:"-", internal has no tag)
-	if len(info.Fields) != 7 {
-		t.Fatalf("len(Fields) = %d, want 7", len(info.Fields))
+	// Package is set for all
+	for _, info := range infos {
+		if info.Package != "testdata" {
+			t.Errorf("%s: Package = %q, want %q", info.Name, info.Package, "testdata")
+		}
 	}
 
-	// Check first field
-	f := info.Fields[0]
-	if f.Name != "ID" || f.Column != "id" || f.GoType != "int" || !f.PrimaryKey {
-		t.Errorf("Fields[0] = %+v", f)
-	}
+	t.Run("User", func(t *testing.T) {
+		t.Parallel()
 
-	// Check time.Time field
-	f = info.Fields[5]
-	if f.Name != "CreatedAt" || f.Column != "created_at" || f.GoType != "time.Time" {
-		t.Errorf("Fields[5] = %+v", f)
-	}
-}
+		info := infos[0]
+		if info.Name != "User" {
+			t.Errorf("Name = %q, want %q", info.Name, "User")
+		}
 
-func TestParsePost(t *testing.T) {
-	t.Parallel()
+		// 7 db fields (Posts is db:"-", internal has no tag)
+		if len(info.Fields) != 7 {
+			t.Fatalf("len(Fields) = %d, want 7", len(info.Fields))
+		}
 
-	info, err := gen.Parse(testdataPath("user.go"), "Post")
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
+		// Check first field
+		f := info.Fields[0]
+		if f.Name != "ID" || f.Column != "id" || f.GoType != "int" || !f.PrimaryKey {
+			t.Errorf("Fields[0] = %+v", f)
+		}
 
-	if len(info.Fields) != 3 {
-		t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
-	}
-	if info.Fields[0].Column != "id" || !info.Fields[0].PrimaryKey {
-		t.Errorf("Fields[0] = %+v", info.Fields[0])
-	}
+		// Check time.Time field
+		f = info.Fields[5]
+		if f.Name != "CreatedAt" || f.Column != "created_at" || f.GoType != "time.Time" {
+			t.Errorf("Fields[5] = %+v", f)
+		}
+	})
+
+	t.Run("Post", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[1]
+		if info.Name != "Post" {
+			t.Errorf("Name = %q, want %q", info.Name, "Post")
+		}
+
+		if len(info.Fields) != 3 {
+			t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+		}
+		if info.Fields[0].Column != "id" || !info.Fields[0].PrimaryKey {
+			t.Errorf("Fields[0] = %+v", info.Fields[0])
+		}
+	})
 }
 
 func TestParsePrimaryKeyField(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("user.go"), "User")
+	infos, err := gen.Parse(testdataPath("user.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	pk, err := info.PrimaryKeyField()
+	pk, err := infos[0].PrimaryKeyField()
 	if err != nil {
 		t.Fatalf("PrimaryKeyField: %v", err)
 	}
@@ -82,30 +95,25 @@ func TestParsePrimaryKeyField(t *testing.T) {
 func TestParseNoPrimaryKey(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("no_pk.go"), "NoPK")
+	infos, err := gen.Parse(testdataPath("no_pk.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	_, err = info.PrimaryKeyField()
+	if len(infos) != 1 {
+		t.Fatalf("len(infos) = %d, want 1", len(infos))
+	}
+
+	_, err = infos[0].PrimaryKeyField()
 	if err == nil {
 		t.Fatal("expected error for no primary key, got nil")
-	}
-}
-
-func TestParseTypeNotFound(t *testing.T) {
-	t.Parallel()
-
-	_, err := gen.Parse(testdataPath("user.go"), "NotExist")
-	if err == nil {
-		t.Fatal("expected error for missing type, got nil")
 	}
 }
 
 func TestParseInvalidFile(t *testing.T) {
 	t.Parallel()
 
-	_, err := gen.Parse("nonexistent.go", "User")
+	_, err := gen.Parse("nonexistent.go")
 	if err == nil {
 		t.Fatal("expected error for invalid file, got nil")
 	}

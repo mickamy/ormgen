@@ -9,13 +9,26 @@ import (
 	"github.com/mickamy/ormgen/internal/gen"
 )
 
+func findStruct(t *testing.T, infos []*gen.StructInfo, name string) *gen.StructInfo {
+	t.Helper()
+	for _, info := range infos {
+		if info.Name == name {
+			return info
+		}
+	}
+	t.Fatalf("struct %q not found", name)
+	return nil
+}
+
 func TestRenderUser(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("user.go"), "User")
+	infos, err := gen.Parse(testdataPath("user.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+
+	info := findStruct(t, infos, "User")
 	info.TableName = "users"
 
 	src, err := gen.Render(info)
@@ -58,10 +71,12 @@ func TestRenderUser(t *testing.T) {
 func TestRenderPost(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("user.go"), "Post")
+	infos, err := gen.Parse(testdataPath("user.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
+
+	info := findStruct(t, infos, "Post")
 	info.TableName = "posts"
 
 	src, err := gen.Render(info)
@@ -93,13 +108,14 @@ func TestRenderPost(t *testing.T) {
 func TestRenderNoPK(t *testing.T) {
 	t.Parallel()
 
-	info, err := gen.Parse(testdataPath("no_pk.go"), "NoPK")
+	infos, err := gen.Parse(testdataPath("no_pk.go"))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	info.TableName = "no_pks"
 
-	_, err = gen.Render(info)
+	infos[0].TableName = "no_pks"
+
+	_, err = gen.Render(infos[0])
 	if err == nil {
 		t.Fatal("expected error for no primary key, got nil")
 	}
