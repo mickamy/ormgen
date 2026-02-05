@@ -4,7 +4,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"
 CMD_DIR = ./
 
-.PHONY: all build install uninstall clean test lint up up-d down
+.PHONY: all build install uninstall clean test itest lint up up-d down
 
 all: build
 
@@ -37,6 +37,9 @@ clean:
 
 test:
 	go test ./...
+
+itest:
+	go test -tags=integration ./...
 
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 || { \
