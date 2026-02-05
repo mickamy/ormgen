@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"reflect"
 	"strings"
+
+	"github.com/mickamy/ormgen/internal/naming"
 )
 
 // FieldInfo holds parsed metadata for one struct field.
@@ -101,28 +103,34 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 	}
 
 	name := field.Names[0].Name
+
+	// Skip unexported fields.
+	if !field.Names[0].IsExported() {
+		return FieldInfo{}, true
+	}
+
 	goType := typeToString(field.Type)
 
-	if field.Tag == nil {
-		return FieldInfo{}, true // no tag, skip
-	}
-
-	tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-	dbTag, ok := tag.Lookup("db")
-	if !ok {
-		return FieldInfo{}, true // no db tag, skip
-	}
-
-	if dbTag == "-" {
-		return FieldInfo{}, true // explicitly skipped
-	}
-
-	parts := strings.Split(dbTag, ",")
-	column := parts[0]
+	// Defaults: column inferred from field name, no primary key.
+	column := naming.CamelToSnake(name)
 	primaryKey := false
-	for _, opt := range parts[1:] {
-		if opt == "primaryKey" {
-			primaryKey = true
+
+	// Override with db tag if present.
+	if field.Tag != nil {
+		tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+		if dbTag, ok := tag.Lookup("db"); ok {
+			if dbTag == "-" {
+				return FieldInfo{}, true // explicitly skipped
+			}
+			parts := strings.Split(dbTag, ",")
+			if parts[0] != "" {
+				column = parts[0]
+			}
+			for _, opt := range parts[1:] {
+				if opt == "primaryKey" {
+					primaryKey = true
+				}
+			}
 		}
 	}
 

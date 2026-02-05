@@ -110,6 +110,42 @@ func TestParseNoPrimaryKey(t *testing.T) {
 	}
 }
 
+func TestParseInferredColumns(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("inferred.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if len(infos) != 1 {
+		t.Fatalf("len(infos) = %d, want 1", len(infos))
+	}
+
+	info := infos[0]
+
+	// ID (db:",primaryKey"), Name (no tag), CreatedAt (no tag)
+	// Secret (db:"-") and internal (unexported) are skipped
+	if len(info.Fields) != 3 {
+		t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+	}
+
+	f := info.Fields[0]
+	if f.Name != "ID" || f.Column != "id" || !f.PrimaryKey {
+		t.Errorf("Fields[0] = %+v", f)
+	}
+
+	f = info.Fields[1]
+	if f.Name != "Name" || f.Column != "name" {
+		t.Errorf("Fields[1] = %+v", f)
+	}
+
+	f = info.Fields[2]
+	if f.Name != "CreatedAt" || f.Column != "created_at" {
+		t.Errorf("Fields[2] = %+v", f)
+	}
+}
+
 func TestParseInvalidFile(t *testing.T) {
 	t.Parallel()
 

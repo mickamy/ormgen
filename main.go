@@ -9,11 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"unicode"
 
 	"github.com/jinzhu/inflection"
 
 	"github.com/mickamy/ormgen/internal/gen"
+	"github.com/mickamy/ormgen/internal/naming"
 )
 
 var version = "dev"
@@ -96,22 +96,6 @@ func resolveImportPath(dir string) (string, error) {
 // inferTableName converts a CamelCase type name to a snake_case plural table name.
 // e.g. "User" -> "users", "UserProfile" -> "user_profiles"
 func inferTableName(typeName string) string {
-	snake := camelToSnake(typeName)
+	snake := naming.CamelToSnake(typeName)
 	return inflection.Plural(snake)
-}
-
-// camelToSnake converts a CamelCase string to snake_case.
-func camelToSnake(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if unicode.IsUpper(r) {
-			if i > 0 {
-				b.WriteByte('_')
-			}
-			b.WriteRune(unicode.ToLower(r))
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
