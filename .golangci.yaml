@@ -23,6 +23,7 @@ linters:
     - gochecknoglobals # Necessary for certain package-level configurations or singleton patterns
     - gochecknoinits   # Required for specific library registrations and setup hooks
     - gocognit         # Thresholds are often too low for complex but necessary business logic
+    - gomoddirectives  # Local replace directives are needed for the example module
     - goconst          # Repeated strings in tests are clearer than abstract constants
     - godot            # Punctuation in comments is a stylistic choice, not a code quality issue
     - ireturn          # Returning interfaces is a valid design pattern in this project's architecture

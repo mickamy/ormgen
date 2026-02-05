@@ -1,3 +1,4 @@
+//nolint:gocyclo,perfsprint,wrapcheck,lll,maintidx // example code
 package main
 
 import (

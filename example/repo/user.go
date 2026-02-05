@@ -1,3 +1,4 @@
+//nolint:wrapcheck // example code
 package repo
 
 import (
