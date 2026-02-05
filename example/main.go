@@ -260,6 +260,34 @@ func main() {
 	if err != nil {
 		fmt.Println("  GhostUser not found — rollback confirmed.")
 	}
+
+	// COUNT
+	fmt.Println("\n--- COUNT ---")
+	totalUsers, err := query.Users(db).Count(ctx)
+	if err != nil {
+		log.Fatalf("count: %v", err)
+	}
+	fmt.Printf("  Total users: %d\n", totalUsers)
+
+	aCount, err := query.Users(db).Where("name LIKE ?", "A%").Count(ctx)
+	if err != nil {
+		log.Fatalf("count where: %v", err)
+	}
+	fmt.Printf("  Users with name starting with 'A': %d\n", aCount)
+
+	// EXISTS
+	fmt.Println("\n--- EXISTS ---")
+	exists, err := query.Users(db).Where("email = ?", "alice.updated@example.com").Exists(ctx)
+	if err != nil {
+		log.Fatalf("exists: %v", err)
+	}
+	fmt.Printf("  alice.updated@example.com exists: %v\n", exists)
+
+	notExists, err := query.Users(db).Where("email = ?", "nobody@example.com").Exists(ctx)
+	if err != nil {
+		log.Fatalf("exists: %v", err)
+	}
+	fmt.Printf("  nobody@example.com exists: %v\n", notExists)
 }
 
 func openDB(dialect string) (*orm.DB, []string) {

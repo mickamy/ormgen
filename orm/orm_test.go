@@ -320,3 +320,77 @@ func TestTransactionHelper(t *testing.T) {
 		})
 	}
 }
+
+func TestCount(t *testing.T) {
+	t.Parallel()
+
+	for _, ds := range dialects {
+		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := setupDB(t, ds)
+			ctx := t.Context()
+
+			for _, name := range []string{"Alice", "Bob", "Alice2"} {
+				u := &User{Name: name, Email: name + "@example.com"}
+				if err := Users(db).Create(ctx, u); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+			}
+
+			// Count all
+			count, err := Users(db).Count(ctx)
+			if err != nil {
+				t.Fatalf("Count: %v", err)
+			}
+			if count != 3 {
+				t.Errorf("Count = %d, want 3", count)
+			}
+
+			// Count with Where
+			count, err = Users(db).Where("name LIKE ?", "Alice%").Count(ctx)
+			if err != nil {
+				t.Fatalf("Count where: %v", err)
+			}
+			if count != 2 {
+				t.Errorf("Count where = %d, want 2", count)
+			}
+		})
+	}
+}
+
+func TestExists(t *testing.T) {
+	t.Parallel()
+
+	for _, ds := range dialects {
+		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := setupDB(t, ds)
+			ctx := t.Context()
+
+			u := &User{Name: "Alice", Email: "alice@example.com"}
+			if err := Users(db).Create(ctx, u); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+
+			// Exists: true
+			exists, err := Users(db).Where("name = ?", "Alice").Exists(ctx)
+			if err != nil {
+				t.Fatalf("Exists: %v", err)
+			}
+			if !exists {
+				t.Error("Exists = false, want true")
+			}
+
+			// Exists: false
+			exists, err = Users(db).Where("name = ?", "Nobody").Exists(ctx)
+			if err != nil {
+				t.Fatalf("Exists: %v", err)
+			}
+			if exists {
+				t.Error("Exists = true, want false")
+			}
+		})
+	}
+}

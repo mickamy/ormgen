@@ -258,6 +258,35 @@ func (q *Query[T]) First(ctx context.Context) (T, error) {
 	return items[0], nil
 }
 
+// Count returns the number of rows matching the current query conditions.
+func (q *Query[T]) Count(ctx context.Context) (int64, error) {
+	query, args := q.buildCount()
+	query, args = q.rewrite(query, args)
+
+	var count int64
+	rows, err := q.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, err //nolint:wrapcheck // pass through
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return 0, errors.New("orm: COUNT returned no rows")
+	}
+	if err := rows.Scan(&count); err != nil {
+		return 0, err //nolint:wrapcheck // pass through
+	}
+	return count, rows.Err() //nolint:wrapcheck // pass through
+}
+
+// Exists returns true if at least one row matches the current query conditions.
+func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
+	count, err := q.Limit(1).Count(ctx)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // Create inserts a new row. If setPK is set, the primary key is populated
 // via RETURNING (PostgreSQL) or LastInsertId (MySQL).
 func (q *Query[T]) Create(ctx context.Context, t *T) error {
@@ -382,6 +411,28 @@ func (q *Query[T]) buildSelect() (string, []any) {
 		b.WriteString(" ORDER BY ")
 		b.WriteString(strings.Join(q.orderBys, ", "))
 	}
+
+	if q.limit != nil {
+		fmt.Fprintf(&b, " LIMIT %d", *q.limit)
+	}
+	if q.offset != nil {
+		fmt.Fprintf(&b, " OFFSET %d", *q.offset)
+	}
+
+	return b.String(), args
+}
+
+func (q *Query[T]) buildCount() (string, []any) {
+	var b strings.Builder
+	b.WriteString("SELECT COUNT(*) FROM ")
+	b.WriteString(q.qi(q.table))
+
+	for _, j := range q.joins {
+		b.WriteByte(' ')
+		b.WriteString(j)
+	}
+
+	args := q.appendWhere(&b)
 
 	if q.limit != nil {
 		fmt.Fprintf(&b, " LIMIT %d", *q.limit)
