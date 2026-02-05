@@ -6,6 +6,7 @@ import (
 	"github.com/mickamy/ormgen/example/model"
 	"github.com/mickamy/ormgen/example/query"
 	"github.com/mickamy/ormgen/orm"
+	"github.com/mickamy/ormgen/scope"
 )
 
 // UserRepository wraps generated query functions with a repository pattern.
@@ -25,8 +26,8 @@ func (r *UserRepository) FindByID(ctx context.Context, id int) (model.User, erro
 	return query.Users(r.db).Where("id = ?", id).First(ctx)
 }
 
-func (r *UserRepository) FindAll(ctx context.Context) ([]model.User, error) {
-	return query.Users(r.db).OrderBy("id").All(ctx)
+func (r *UserRepository) FindAll(ctx context.Context, scopes ...scope.Scope) ([]model.User, error) {
+	return query.Users(r.db).Scopes(scopes...).OrderBy("id").All(ctx)
 }
 
 func (r *UserRepository) Update(ctx context.Context, u *model.User) error {

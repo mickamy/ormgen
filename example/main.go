@@ -14,6 +14,7 @@ import (
 	"github.com/mickamy/ormgen/example/model"
 	"github.com/mickamy/ormgen/example/repo"
 	"github.com/mickamy/ormgen/orm"
+	"github.com/mickamy/ormgen/scope"
 )
 
 var createTableMySQL = `CREATE TABLE users (
@@ -53,17 +54,20 @@ func main() {
 	// INSERT
 	fmt.Println("\n--- INSERT ---")
 	now := time.Now()
-	alice := &model.User{Name: "Alice", Email: "alice@example.com", CreatedAt: now}
-	if err := userRepo.Create(ctx, alice); err != nil {
-		log.Fatalf("create Alice: %v", err)
+	names := []string{"Alice", "Bob", "Charlie", "Diana", "Eve"}
+	users := make([]*model.User, len(names))
+	for i, name := range names {
+		u := &model.User{
+			Name:      name,
+			Email:     fmt.Sprintf("%s@example.com", name),
+			CreatedAt: now,
+		}
+		if err := userRepo.Create(ctx, u); err != nil {
+			log.Fatalf("create %s: %v", name, err)
+		}
+		users[i] = u
+		fmt.Printf("Created: ID=%d Name=%s\n", u.ID, u.Name)
 	}
-	fmt.Printf("Created: %+v\n", *alice)
-
-	bob := &model.User{Name: "Bob", Email: "bob@example.com", CreatedAt: now}
-	if err := userRepo.Create(ctx, bob); err != nil {
-		log.Fatalf("create Bob: %v", err)
-	}
-	fmt.Printf("Created: %+v\n", *bob)
 
 	// SELECT (all)
 	fmt.Println("\n--- SELECT ALL ---")
@@ -72,44 +76,70 @@ func main() {
 		log.Fatalf("find all: %v", err)
 	}
 	for _, u := range all {
-		fmt.Printf("  %+v\n", u)
+		fmt.Printf("  ID=%d Name=%s Email=%s\n", u.ID, u.Name, u.Email)
 	}
 
 	// SELECT (by ID)
 	fmt.Println("\n--- SELECT BY ID ---")
-	found, err := userRepo.FindByID(ctx, alice.ID)
+	found, err := userRepo.FindByID(ctx, users[0].ID)
 	if err != nil {
 		log.Fatalf("find by ID: %v", err)
 	}
-	fmt.Printf("Found: %+v\n", found)
+	fmt.Printf("Found: ID=%d Name=%s\n", found.ID, found.Name)
 
 	// UPDATE
 	fmt.Println("\n--- UPDATE ---")
-	alice.Name = "Alice Updated"
-	alice.Email = "alice.updated@example.com"
-	if err := userRepo.Update(ctx, alice); err != nil {
-		log.Fatalf("update Alice: %v", err)
+	users[0].Name = "Alice Updated"
+	users[0].Email = "alice.updated@example.com"
+	if err := userRepo.Update(ctx, users[0]); err != nil {
+		log.Fatalf("update: %v", err)
 	}
-	updated, err := userRepo.FindByID(ctx, alice.ID)
+	updated, err := userRepo.FindByID(ctx, users[0].ID)
 	if err != nil {
 		log.Fatalf("find after update: %v", err)
 	}
-	fmt.Printf("Updated: %+v\n", updated)
+	fmt.Printf("Updated: ID=%d Name=%s Email=%s\n", updated.ID, updated.Name, updated.Email)
 
 	// DELETE
 	fmt.Println("\n--- DELETE ---")
-	if err := userRepo.Delete(ctx, bob.ID); err != nil {
-		log.Fatalf("delete Bob: %v", err)
+	if err := userRepo.Delete(ctx, users[1].ID); err != nil {
+		log.Fatalf("delete: %v", err)
 	}
-	fmt.Printf("Deleted user with ID=%d\n", bob.ID)
+	fmt.Printf("Deleted user with ID=%d\n", users[1].ID)
 
-	remaining, err := userRepo.FindAll(ctx)
+	// SCOPES
+	fmt.Println("\n--- SCOPES ---")
+
+	// Paginate with Limit + Offset
+	fmt.Println("Paginate (limit=2, offset=1):")
+	paginate := scope.Combine(scope.Limit(2), scope.Offset(1))
+	page, err := userRepo.FindAll(ctx, paginate...)
 	if err != nil {
-		log.Fatalf("find all after delete: %v", err)
+		log.Fatalf("paginate: %v", err)
 	}
-	fmt.Printf("Remaining users: %d\n", len(remaining))
-	for _, u := range remaining {
-		fmt.Printf("  %+v\n", u)
+	for _, u := range page {
+		fmt.Printf("  ID=%d Name=%s\n", u.ID, u.Name)
+	}
+
+	// Filter with Where
+	fmt.Println("Where (name LIKE 'A%%'):")
+	filtered, err := userRepo.FindAll(ctx, scope.Where("name LIKE ?", "A%"))
+	if err != nil {
+		log.Fatalf("where: %v", err)
+	}
+	for _, u := range filtered {
+		fmt.Printf("  ID=%d Name=%s\n", u.ID, u.Name)
+	}
+
+	// Filter with In
+	fmt.Println("In (id IN ...):")
+	ids := []int{users[0].ID, users[2].ID, users[4].ID}
+	inResult, err := userRepo.FindAll(ctx, scope.In("id", ids))
+	if err != nil {
+		log.Fatalf("in: %v", err)
+	}
+	for _, u := range inResult {
+		fmt.Printf("  ID=%d Name=%s\n", u.ID, u.Name)
 	}
 }
 
