@@ -400,3 +400,42 @@ func TestExists(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateAll(t *testing.T) {
+	for _, ds := range dialects {
+		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := setupDB(t, ds)
+			ctx := t.Context()
+
+			users := []*User{
+				{Name: "Alice", Email: "alice@example.com"},
+				{Name: "Bob", Email: "bob@example.com"},
+				{Name: "Charlie", Email: "charlie@example.com"},
+			}
+			if err := Users(db).CreateAll(ctx, users); err != nil {
+				t.Fatalf("CreateAll: %v", err)
+			}
+
+			// Verify PKs are set
+			for i, u := range users {
+				if u.ID == 0 {
+					t.Errorf("users[%d].ID = 0, want non-zero", i)
+				}
+			}
+
+			// Verify all rows exist
+			all, err := Users(db).OrderBy("id").All(ctx)
+			if err != nil {
+				t.Fatalf("All: %v", err)
+			}
+			if len(all) != 3 {
+				t.Fatalf("len(All) = %d, want 3", len(all))
+			}
+			if all[0].Name != "Alice" || all[1].Name != "Bob" || all[2].Name != "Charlie" {
+				t.Errorf("names = %q %q %q", all[0].Name, all[1].Name, all[2].Name)
+			}
+		})
+	}
+}

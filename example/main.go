@@ -288,6 +288,20 @@ func main() {
 		log.Fatalf("exists: %v", err)
 	}
 	fmt.Printf("  nobody@example.com exists: %v\n", notExists)
+
+	// BATCH INSERT
+	fmt.Println("\n--- BATCH INSERT ---")
+	batchPosts := []*model.Post{
+		{UserID: users[0].ID, Title: "Batch post 1", Body: "body 1"},
+		{UserID: users[2].ID, Title: "Batch post 2", Body: "body 2"},
+		{UserID: users[4].ID, Title: "Batch post 3", Body: "body 3"},
+	}
+	if err := query.Posts(db).CreateAll(ctx, batchPosts); err != nil {
+		log.Fatalf("batch insert: %v", err)
+	}
+	for _, p := range batchPosts {
+		fmt.Printf("  Created: ID=%d UserID=%d Title=%q\n", p.ID, p.UserID, p.Title)
+	}
 }
 
 func openDB(dialect string) (*orm.DB, []string) {

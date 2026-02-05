@@ -330,6 +330,60 @@ func (q *Query[T]) Create(ctx context.Context, t *T) error {
 	return nil
 }
 
+// CreateAll inserts multiple rows in a single INSERT statement.
+// If setPK is set, primary keys are populated for each row.
+func (q *Query[T]) CreateAll(ctx context.Context, items []*T) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	includesPK := q.setPK == nil
+	columns, _ := q.colValPairs(items[0], includesPK)
+
+	var allValues []any
+	for _, item := range items {
+		_, vals := q.colValPairs(item, includesPK)
+		allValues = append(allValues, vals...)
+	}
+
+	query := q.buildBatchInsert(columns, len(items))
+	query, allValues = q.rewrite(query, allValues)
+
+	d := q.db.dialect()
+	if d.UseReturning() && q.setPK != nil {
+		query += d.ReturningClause(q.pk)
+		rows, err := q.db.QueryContext(ctx, query, allValues...)
+		if err != nil {
+			return err //nolint:wrapcheck // pass through
+		}
+		defer func() { _ = rows.Close() }()
+		for i := 0; rows.Next(); i++ {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return err //nolint:wrapcheck // pass through
+			}
+			q.setPK(items[i], id)
+		}
+		return rows.Err() //nolint:wrapcheck // pass through
+	}
+
+	result, err := q.db.ExecContext(ctx, query, allValues...)
+	if err != nil {
+		return err //nolint:wrapcheck // pass through
+	}
+
+	if q.setPK != nil {
+		firstID, err := result.LastInsertId()
+		if err != nil {
+			return err //nolint:wrapcheck // pass through
+		}
+		for i, item := range items {
+			q.setPK(item, firstID+int64(i))
+		}
+	}
+	return nil
+}
+
 // Update updates the row identified by the primary key of t.
 // All non-PK columns are SET.
 func (q *Query[T]) Update(ctx context.Context, t *T) error {
@@ -454,6 +508,26 @@ func (q *Query[T]) buildInsert(columns []string) string {
 		q.qi(q.table),
 		q.quoteColumns(columns),
 		strings.Join(placeholders, ", "),
+	)
+}
+
+func (q *Query[T]) buildBatchInsert(columns []string, rowCount int) string {
+	ph := make([]string, len(columns))
+	for i := range ph {
+		ph[i] = "?"
+	}
+	oneRow := "(" + strings.Join(ph, ", ") + ")"
+
+	rows := make([]string, rowCount)
+	for i := range rows {
+		rows[i] = oneRow
+	}
+
+	return fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES %s",
+		q.qi(q.table),
+		q.quoteColumns(columns),
+		strings.Join(rows, ", "),
 	)
 }
 
