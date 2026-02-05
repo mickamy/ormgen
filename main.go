@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -17,8 +19,8 @@ import (
 var version = "dev"
 
 func main() {
-	typeName := flag.String("type", "", "struct type name (required)")
-	tableName := flag.String("table", "", "table name (optional; inferred from -type if omitted)")
+	source := flag.String("source", "", "source file path (required)")
+	destination := flag.String("destination", "", "output directory (default: same as source)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -27,39 +29,68 @@ func main() {
 		return
 	}
 
-	if *typeName == "" {
-		log.Fatal("-type flag is required")
+	if *source == "" {
+		log.Fatal("-source flag is required")
 	}
 
-	if *tableName == "" {
-		*tableName = inferTableName(*typeName)
-	}
-
-	goFile := os.Getenv("GOFILE")
-	if goFile == "" {
-		log.Fatal("GOFILE environment variable is not set (run via go:generate)")
-	}
-
-	info, err := gen.Parse(goFile, *typeName)
+	infos, err := gen.Parse(*source)
 	if err != nil {
 		log.Fatalf("parse: %v", err)
 	}
 
-	info.TableName = *tableName
+	if len(infos) == 0 {
+		log.Fatalf("no structs with db tags found in %s", *source)
+	}
 
-	src, err := gen.Render(info)
+	for _, info := range infos {
+		info.TableName = inferTableName(info.Name)
+	}
+
+	var opt gen.RenderOption
+	outDir := filepath.Dir(*source)
+
+	if *destination != "" {
+		outDir = *destination
+		opt.DestPkg = filepath.Base(*destination)
+		importPath, err := resolveImportPath(filepath.Dir(*source))
+		if err != nil {
+			log.Fatalf("resolve import path: %v", err)
+		}
+		opt.SourceImport = importPath
+	}
+
+	src, err := gen.RenderFile(infos, opt)
 	if err != nil {
 		log.Fatalf("render: %v", err)
 	}
 
-	outFile := strings.ToLower(*typeName) + "_gen.go"
-	outPath := filepath.Join(filepath.Dir(goFile), outFile)
+	base := strings.TrimSuffix(filepath.Base(*source), ".go")
+	outFile := base + "_gen.go"
+	outPath := filepath.Join(outDir, outFile)
 
 	if err := os.WriteFile(outPath, src, 0o644); err != nil { //nolint:gosec // generated code should be world-readable
 		log.Fatalf("write %s: %v", outPath, err)
 	}
 
 	fmt.Printf("ormgen: wrote %s\n", outPath)
+}
+
+// resolveImportPath returns the Go import path for the package in dir.
+func resolveImportPath(dir string) (string, error) {
+	cmd := exec.Command("go", "list", "-json", ".")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go list: %w", err)
+	}
+
+	var pkg struct {
+		ImportPath string `json:"ImportPath"` //nolint:tagliatelle // go list -json uses PascalCase
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		return "", fmt.Errorf("parse go list output: %w", err)
+	}
+	return pkg.ImportPath, nil
 }
 
 // inferTableName converts a CamelCase type name to a snake_case plural table name.
