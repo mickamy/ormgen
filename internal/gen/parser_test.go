@@ -146,6 +146,83 @@ func TestParseInferredColumns(t *testing.T) {
 	}
 }
 
+func TestParseRelations(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("relations.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if len(infos) != 2 {
+		t.Fatalf("len(infos) = %d, want 2", len(infos))
+	}
+
+	t.Run("Author has_many Articles", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[0]
+		if info.Name != "Author" {
+			t.Fatalf("Name = %q, want %q", info.Name, "Author")
+		}
+		if len(info.Relations) != 1 {
+			t.Fatalf("len(Relations) = %d, want 1", len(info.Relations))
+		}
+
+		rel := info.Relations[0]
+		if rel.FieldName != "Articles" {
+			t.Errorf("FieldName = %q, want %q", rel.FieldName, "Articles")
+		}
+		if rel.TargetType != "Article" {
+			t.Errorf("TargetType = %q, want %q", rel.TargetType, "Article")
+		}
+		if rel.RelType != "has_many" {
+			t.Errorf("RelType = %q, want %q", rel.RelType, "has_many")
+		}
+		if rel.ForeignKey != "author_id" {
+			t.Errorf("ForeignKey = %q, want %q", rel.ForeignKey, "author_id")
+		}
+		if !rel.IsSlice {
+			t.Error("IsSlice = false, want true")
+		}
+		if rel.IsPointer {
+			t.Error("IsPointer = true, want false")
+		}
+	})
+
+	t.Run("Article belongs_to Author", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[1]
+		if info.Name != "Article" {
+			t.Fatalf("Name = %q, want %q", info.Name, "Article")
+		}
+		if len(info.Relations) != 1 {
+			t.Fatalf("len(Relations) = %d, want 1", len(info.Relations))
+		}
+
+		rel := info.Relations[0]
+		if rel.FieldName != "Author" {
+			t.Errorf("FieldName = %q, want %q", rel.FieldName, "Author")
+		}
+		if rel.TargetType != "Author" {
+			t.Errorf("TargetType = %q, want %q", rel.TargetType, "Author")
+		}
+		if rel.RelType != "belongs_to" {
+			t.Errorf("RelType = %q, want %q", rel.RelType, "belongs_to")
+		}
+		if rel.ForeignKey != "author_id" {
+			t.Errorf("ForeignKey = %q, want %q", rel.ForeignKey, "author_id")
+		}
+		if rel.IsSlice {
+			t.Error("IsSlice = true, want false")
+		}
+		if !rel.IsPointer {
+			t.Error("IsPointer = false, want true")
+		}
+	})
+}
+
 func TestParseInvalidFile(t *testing.T) {
 	t.Parallel()
 

@@ -19,12 +19,23 @@ type FieldInfo struct {
 	PrimaryKey bool   // true if tag contains "primaryKey"
 }
 
+// RelationInfo holds parsed metadata for a relation field.
+type RelationInfo struct {
+	FieldName  string // Go field name, e.g. "Posts" or "User"
+	TargetType string // Target struct name, e.g. "Post" or "User"
+	RelType    string // "has_many" or "belongs_to"
+	ForeignKey string // FK column name, e.g. "user_id"
+	IsSlice    bool   // true for has_many ([]Post)
+	IsPointer  bool   // true for belongs_to (*User)
+}
+
 // StructInfo holds parsed metadata for the target struct.
 type StructInfo struct {
-	Name      string      // Go struct name, e.g. "User"
-	Package   string      // Package name, e.g. "model"
-	Fields    []FieldInfo // Non-skipped db fields
-	TableName string      // Set by the caller (from CLI flag)
+	Name      string         // Go struct name, e.g. "User"
+	Package   string         // Package name, e.g. "model"
+	Fields    []FieldInfo    // Non-skipped db fields
+	Relations []RelationInfo // Parsed rel tags
+	TableName string         // Set by the caller (from CLI flag)
 }
 
 // PrimaryKeyField returns the primary key field, or an error if none or
@@ -69,14 +80,16 @@ func Parse(filePath string) ([]*StructInfo, error) {
 		}
 
 		fields := parseStructFields(st)
+		relations := parseRelations(st)
 		if len(fields) == 0 {
 			return true
 		}
 
 		infos = append(infos, &StructInfo{
-			Name:    ts.Name.Name,
-			Package: pkg,
-			Fields:  fields,
+			Name:      ts.Name.Name,
+			Package:   pkg,
+			Fields:    fields,
+			Relations: relations,
 		})
 		return true
 	})
@@ -140,6 +153,63 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 		GoType:     goType,
 		PrimaryKey: primaryKey,
 	}, false
+}
+
+// parseRelations extracts rel-tagged fields from an AST struct type.
+func parseRelations(st *ast.StructType) []RelationInfo {
+	var rels []RelationInfo
+	for _, field := range st.Fields.List {
+		if len(field.Names) == 0 || field.Tag == nil {
+			continue
+		}
+
+		tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+		relTag, ok := tag.Lookup("rel")
+		if !ok || relTag == "" {
+			continue
+		}
+
+		ri := RelationInfo{FieldName: field.Names[0].Name}
+
+		// Parse rel tag: "has_many,foreign_key:user_id"
+		for _, part := range strings.Split(relTag, ",") {
+			part = strings.TrimSpace(part)
+			if k, v, found := strings.Cut(part, ":"); found {
+				if k == "foreign_key" {
+					ri.ForeignKey = v
+				}
+			} else {
+				ri.RelType = part
+			}
+		}
+
+		// Determine target type from field type.
+		ri.TargetType, ri.IsSlice, ri.IsPointer = extractTargetType(field.Type)
+
+		if ri.RelType != "" && ri.ForeignKey != "" && ri.TargetType != "" {
+			rels = append(rels, ri)
+		}
+	}
+	return rels
+}
+
+// extractTargetType returns the base type name, and whether it's a slice or pointer.
+func extractTargetType(expr ast.Expr) (name string, isSlice, isPointer bool) {
+	switch t := expr.(type) {
+	case *ast.ArrayType:
+		if t.Len == nil { // slice
+			name, _, _ = extractTargetType(t.Elt)
+			return name, true, false
+		}
+	case *ast.StarExpr:
+		name, _, _ = extractTargetType(t.X)
+		return name, false, true
+	case *ast.Ident:
+		return t.Name, false, false
+	case *ast.SelectorExpr:
+		return t.Sel.Name, false, false
+	}
+	return "", false, false
 }
 
 func typeToString(expr ast.Expr) string {

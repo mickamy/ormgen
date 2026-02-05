@@ -23,6 +23,18 @@ type ColumnValueFunc[T any] func(t *T, includesPK bool) (columns []string, value
 // May be nil when the primary key is not auto-generated.
 type SetPKFunc[T any] func(t *T, id int64)
 
+// PreloaderFunc executes a preload query and assigns results to the parent slice.
+// Generated per-relation by ormgen.
+type PreloaderFunc[T any] func(ctx context.Context, db Querier, results []T) error
+
+// JoinConfig holds the metadata needed to build a JOIN clause at runtime.
+type JoinConfig struct {
+	TargetTable  string
+	TargetColumn string
+	SourceTable  string
+	SourceColumn string
+}
+
 // Query represents a pending query against a single table.
 // All builder methods return a new Query; the receiver is never modified.
 type Query[T any] struct {
@@ -36,9 +48,14 @@ type Query[T any] struct {
 
 	wheres   []whereClause
 	orderBys []string
+	joins    []string
 	selects  *string
 	limit    *int
 	offset   *int
+
+	joinDefs   map[string]JoinConfig
+	preloaders map[string]PreloaderFunc[T]
+	preloads   []string
 }
 
 type whereClause struct {
@@ -67,11 +84,29 @@ func NewQuery[T any](
 	}
 }
 
+// RegisterJoin registers a named join definition for use with Join/LeftJoin.
+func (q *Query[T]) RegisterJoin(name string, cfg JoinConfig) {
+	if q.joinDefs == nil {
+		q.joinDefs = make(map[string]JoinConfig)
+	}
+	q.joinDefs[name] = cfg
+}
+
+// RegisterPreloader registers a named preloader for use with Preload.
+func (q *Query[T]) RegisterPreloader(name string, fn PreloaderFunc[T]) {
+	if q.preloaders == nil {
+		q.preloaders = make(map[string]PreloaderFunc[T])
+	}
+	q.preloaders[name] = fn
+}
+
 // clone returns a shallow copy with slices copied to avoid aliasing.
 func (q *Query[T]) clone() *Query[T] {
 	q2 := *q
 	q2.wheres = append([]whereClause(nil), q.wheres...)
 	q2.orderBys = append([]string(nil), q.orderBys...)
+	q2.joins = append([]string(nil), q.joins...)
+	q2.preloads = append([]string(nil), q.preloads...)
 	return &q2
 }
 
@@ -104,6 +139,40 @@ func (q *Query[T]) Offset(n int) *Query[T] {
 func (q *Query[T]) Select(columns string) *Query[T] {
 	q2 := q.clone()
 	q2.selects = &columns
+	return q2
+}
+
+// Join adds an INNER JOIN for the named relation.
+func (q *Query[T]) Join(name string) *Query[T] {
+	return q.addJoin("INNER JOIN", name)
+}
+
+// LeftJoin adds a LEFT JOIN for the named relation.
+func (q *Query[T]) LeftJoin(name string) *Query[T] {
+	return q.addJoin("LEFT JOIN", name)
+}
+
+func (q *Query[T]) addJoin(joinType, name string) *Query[T] {
+	cfg, ok := q.joinDefs[name]
+	if !ok {
+		return q
+	}
+	clause := fmt.Sprintf(
+		"%s %s ON %s.%s = %s.%s",
+		joinType,
+		q.qi(cfg.TargetTable),
+		q.qi(cfg.TargetTable), q.qi(cfg.TargetColumn),
+		q.qi(cfg.SourceTable), q.qi(cfg.SourceColumn),
+	)
+	q2 := q.clone()
+	q2.joins = append(q2.joins, clause)
+	return q2
+}
+
+// Preload registers a relation to be eagerly loaded after the main query.
+func (q *Query[T]) Preload(name string) *Query[T] {
+	q2 := q.clone()
+	q2.preloads = append(q2.preloads, name)
 	return q2
 }
 
@@ -156,7 +225,21 @@ func (q *Query[T]) All(ctx context.Context) ([]T, error) {
 		}
 		result = append(result, item)
 	}
-	return result, rows.Err() //nolint:wrapcheck // pass through
+	if err := rows.Err(); err != nil {
+		return nil, err //nolint:wrapcheck // pass through
+	}
+
+	for _, name := range q.preloads {
+		fn, ok := q.preloaders[name]
+		if !ok {
+			return nil, fmt.Errorf("orm: unknown preload %q", name)
+		}
+		if err := fn(ctx, q.db, result); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
 }
 
 // First executes a SELECT with LIMIT 1 and returns the first row.
@@ -287,6 +370,11 @@ func (q *Query[T]) buildSelect() (string, []any) {
 
 	b.WriteString(" FROM ")
 	b.WriteString(q.qi(q.table))
+
+	for _, j := range q.joins {
+		b.WriteByte(' ')
+		b.WriteString(j)
+	}
 
 	args := q.appendWhere(&b)
 

@@ -6,6 +6,33 @@ import (
 	"github.com/mickamy/ormgen/internal/naming"
 )
 
+func TestSnakeToCamel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"id", "ID"},
+		{"name", "Name"},
+		{"created_at", "CreatedAt"},
+		{"user_id", "UserID"},
+		{"http_server", "HTTPServer"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+
+			got := naming.SnakeToCamel(tt.input)
+			if got != tt.want {
+				t.Errorf("SnakeToCamel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCamelToSnake(t *testing.T) {
 	t.Parallel()
 

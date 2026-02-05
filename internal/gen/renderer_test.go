@@ -161,6 +161,55 @@ func TestRenderFileMultipleStructs(t *testing.T) {
 	}
 }
 
+func TestRenderRelations(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("relations.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	findStruct(t, infos, "Author").TableName = "authors"
+	findStruct(t, infos, "Article").TableName = "articles"
+
+	src, err := gen.RenderFile(infos, gen.RenderOption{})
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "relations_gen.go", src, 0); err != nil {
+		t.Fatalf("generated code does not parse: %v\n%s", err, code)
+	}
+
+	checks := []string{
+		// has_many preloader
+		"func preloadAuthorArticles(ctx context.Context, db orm.Querier, results []Author)",
+		`scope.In("author_id", ids)`,
+		"Articles(db)",
+		// belongs_to preloader
+		"func preloadArticleAuthor(ctx context.Context, db orm.Querier, results []Article)",
+		`scope.In("id", ids)`,
+		"Authors(db)",
+		// RegisterJoin
+		`q.RegisterJoin("Articles"`,
+		`q.RegisterJoin("Author"`,
+		// RegisterPreloader
+		`q.RegisterPreloader("Articles", preloadAuthorArticles)`,
+		`q.RegisterPreloader("Author", preloadArticleAuthor)`,
+		// Imports
+		`"context"`,
+		`"github.com/mickamy/ormgen/scope"`,
+	}
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+}
+
 func TestRenderFileCrossPackage(t *testing.T) {
 	t.Parallel()
 

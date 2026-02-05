@@ -12,24 +12,42 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/mickamy/ormgen/example/model"
+	"github.com/mickamy/ormgen/example/query"
 	"github.com/mickamy/ormgen/example/repo"
 	"github.com/mickamy/ormgen/orm"
 	"github.com/mickamy/ormgen/scope"
 )
 
-var createTableMySQL = `CREATE TABLE users (
-	id INT AUTO_INCREMENT PRIMARY KEY,
-	name VARCHAR(255) NOT NULL,
-	email VARCHAR(255) NOT NULL,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-)`
+var createTablesMySQL = []string{
+	`CREATE TABLE users (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		email VARCHAR(255) NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`,
+	`CREATE TABLE posts (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id INT NOT NULL,
+		title VARCHAR(255) NOT NULL,
+		body TEXT NOT NULL,
+		FOREIGN KEY (user_id) REFERENCES users(id)
+	)`,
+}
 
-var createTablePostgreSQL = `CREATE TABLE users (
-	id SERIAL PRIMARY KEY,
-	name VARCHAR(255) NOT NULL,
-	email VARCHAR(255) NOT NULL,
-	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)`
+var createTablesPostgreSQL = []string{
+	`CREATE TABLE users (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		email VARCHAR(255) NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	)`,
+	`CREATE TABLE posts (
+		id SERIAL PRIMARY KEY,
+		user_id INT NOT NULL REFERENCES users(id),
+		title VARCHAR(255) NOT NULL,
+		body TEXT NOT NULL
+	)`,
+}
 
 func main() {
 	dialect := flag.String("dialect", "mysql", "database dialect (mysql or postgres)")
@@ -37,17 +55,21 @@ func main() {
 
 	ctx := context.Background()
 
-	db, createTableSQL := openDB(*dialect)
+	db, createTableSQLs := openDB(*dialect)
 
 	// CREATE TABLE
 	fmt.Println("--- CREATE TABLE ---")
-	if _, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS users"); err != nil {
-		log.Fatalf("drop table: %v", err)
+	for _, table := range []string{"posts", "users"} {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table)); err != nil {
+			log.Fatalf("drop: %v", err)
+		}
 	}
-	if _, err := db.ExecContext(ctx, createTableSQL); err != nil {
-		log.Fatalf("create table: %v", err)
+	for _, ddl := range createTableSQLs {
+		if _, err := db.ExecContext(ctx, ddl); err != nil {
+			log.Fatalf("create table: %v", err)
+		}
 	}
-	fmt.Println("Table 'users' created.")
+	fmt.Println("Tables 'users' and 'posts' created.")
 
 	userRepo := repo.NewUserRepository(db)
 
@@ -141,24 +163,83 @@ func main() {
 	for _, u := range inResult {
 		fmt.Printf("  ID=%d Name=%s\n", u.ID, u.Name)
 	}
+
+	// Create posts for Join/Preload demo
+	fmt.Println("\n--- INSERT POSTS ---")
+	postData := []struct {
+		userIdx int
+		title   string
+	}{
+		{0, "Alice's first post"},
+		{0, "Alice's second post"},
+		{2, "Charlie's post"},
+		{4, "Eve's post"},
+	}
+	for _, pd := range postData {
+		p := &model.Post{
+			UserID: users[pd.userIdx].ID,
+			Title:  pd.title,
+			Body:   "body of " + pd.title,
+		}
+		if err := query.Posts(db).Create(ctx, p); err != nil {
+			log.Fatalf("create post: %v", err)
+		}
+		fmt.Printf("Created: ID=%d UserID=%d Title=%q\n", p.ID, p.UserID, p.Title)
+	}
+
+	// JOIN
+	fmt.Println("\n--- JOIN ---")
+	fmt.Println("Users who have posts (INNER JOIN):")
+	joined, err := query.Users(db).Join("Posts").Select("DISTINCT users.*").All(ctx)
+	if err != nil {
+		log.Fatalf("join: %v", err)
+	}
+	for _, u := range joined {
+		fmt.Printf("  ID=%d Name=%s\n", u.ID, u.Name)
+	}
+
+	// PRELOAD (has_many)
+	fmt.Println("\n--- PRELOAD (has_many) ---")
+	fmt.Println("Users with their posts:")
+	usersWithPosts, err := query.Users(db).Preload("Posts").OrderBy("id").All(ctx)
+	if err != nil {
+		log.Fatalf("preload: %v", err)
+	}
+	for _, u := range usersWithPosts {
+		fmt.Printf("  User: ID=%d Name=%s (posts: %d)\n", u.ID, u.Name, len(u.Posts))
+		for _, p := range u.Posts {
+			fmt.Printf("    Post: ID=%d Title=%q\n", p.ID, p.Title)
+		}
+	}
+
+	// PRELOAD (belongs_to)
+	fmt.Println("\n--- PRELOAD (belongs_to) ---")
+	fmt.Println("Posts with their author:")
+	postsWithUser, err := query.Posts(db).Preload("User").OrderBy("id").All(ctx)
+	if err != nil {
+		log.Fatalf("preload: %v", err)
+	}
+	for _, p := range postsWithUser {
+		fmt.Printf("  Post: ID=%d Title=%q Author=%s\n", p.ID, p.Title, p.User.Name)
+	}
 }
 
-func openDB(dialect string) (*orm.DB, string) {
+func openDB(dialect string) (*orm.DB, []string) {
 	switch dialect {
 	case "mysql":
 		sqlDB, err := sql.Open("mysql", "root:root@tcp(127.0.0.1:3306)/ormgen_test?parseTime=true")
 		if err != nil {
 			log.Fatalf("open mysql: %v", err)
 		}
-		return orm.New(sqlDB, orm.MySQL), createTableMySQL
+		return orm.New(sqlDB, orm.MySQL), createTablesMySQL
 	case "postgres":
 		sqlDB, err := sql.Open("pgx", "postgres://postgres:postgres@127.0.0.1:5432/ormgen_test?sslmode=disable")
 		if err != nil {
 			log.Fatalf("open postgres: %v", err)
 		}
-		return orm.New(sqlDB, orm.PostgreSQL), createTablePostgreSQL
+		return orm.New(sqlDB, orm.PostgreSQL), createTablesPostgreSQL
 	default:
 		log.Fatalf("unknown dialect: %s (use 'mysql' or 'postgres')", dialect)
-		return nil, ""
+		return nil, nil
 	}
 }

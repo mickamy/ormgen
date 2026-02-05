@@ -2,18 +2,26 @@
 package query
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/mickamy/ormgen/example/model"
 	"github.com/mickamy/ormgen/orm"
+	"github.com/mickamy/ormgen/scope"
 )
 
 // Users returns a new Query for the users table.
 func Users(db orm.Querier) *orm.Query[model.User] {
-	return orm.NewQuery[model.User](
+	q := orm.NewQuery[model.User](
 		db, "users", usersColumns, "id",
 		scanUser, userColumnValuePairs, setUserPK,
 	)
+	q.RegisterJoin("Posts", orm.JoinConfig{
+		TargetTable: "posts", TargetColumn: "user_id",
+		SourceTable: "users", SourceColumn: "id",
+	})
+	q.RegisterPreloader("Posts", preloadUserPosts)
+	return q
 }
 
 var usersColumns = []string{"id", "name", "email", "created_at"}
@@ -51,4 +59,26 @@ func userColumnValuePairs(v *model.User, includesPK bool) ([]string, []any) {
 
 func setUserPK(v *model.User, id int64) {
 	v.ID = int(id)
+}
+
+func preloadUserPosts(ctx context.Context, db orm.Querier, results []model.User) error {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]int, len(results))
+	for i := range results {
+		ids[i] = results[i].ID
+	}
+	related, err := Posts(db).Scopes(scope.In("user_id", ids)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byFK := make(map[int][]model.Post)
+	for _, r := range related {
+		byFK[r.UserID] = append(byFK[r.UserID], r)
+	}
+	for i := range results {
+		results[i].Posts = byFK[results[i].ID]
+	}
+	return nil
 }
