@@ -120,3 +120,85 @@ func TestRenderNoPK(t *testing.T) {
 		t.Fatal("expected error for no primary key, got nil")
 	}
 }
+
+func TestRenderFileMultipleStructs(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("user.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	findStruct(t, infos, "User").TableName = "users"
+	findStruct(t, infos, "Post").TableName = "posts"
+
+	src, err := gen.RenderFile(infos, gen.RenderOption{})
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	// Verify it's valid Go
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "model_gen.go", src, 0); err != nil {
+		t.Fatalf("generated code does not parse: %v\n%s", err, code)
+	}
+
+	// Both structs should be present in a single file
+	checks := []string{
+		"func Users(db orm.Querier) *orm.Query[User]",
+		"func Posts(db orm.Querier) *orm.Query[Post]",
+		"scanUser",
+		"scanPost",
+		"usersColumns",
+		"postsColumns",
+	}
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+}
+
+func TestRenderFileCrossPackage(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("user.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	info := findStruct(t, infos, "User")
+	info.TableName = "users"
+
+	opt := gen.RenderOption{
+		DestPkg:      "repo",
+		SourceImport: "github.com/example/model",
+	}
+
+	src, err := gen.RenderFile([]*gen.StructInfo{info}, opt)
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "model_gen.go", src, 0); err != nil {
+		t.Fatalf("generated code does not parse: %v\n%s", err, code)
+	}
+
+	checks := []string{
+		"package repo",
+		`"github.com/example/model"`,
+		"func Users(db orm.Querier) *orm.Query[model.User]",
+		"var v model.User",
+		"func scanUser(rows *sql.Rows) (model.User, error)",
+	}
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+}
