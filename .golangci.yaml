@@ -14,6 +14,8 @@ linters:
   disable:
     - cyclop           # Redundant; cognitive complexity is already tracked by gocognit
     - depguard         # Import restrictions are not currently required for this internal architecture
+    - dogsled          # Multiple blank identifiers are unavoidable with some stdlib functions (e.g. runtime.Caller)
+    - err113           # Sentinel errors are used where meaningful; contextual fmt.Errorf is preferred elsewhere
     - dupl             # High false-positive rate in test suites where setup code is similar
     - exhaustruct      # Hinders use of default values; too boilerplate-heavy for large structs
     - forbidigo        # Essential for CLI tools that rely on fmt.Print for user output

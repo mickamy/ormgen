@@ -3,6 +3,7 @@ package orm
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -192,7 +193,7 @@ func (q *Query[T]) Create(ctx context.Context, t *T) error {
 		}
 		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
-			return ErrNoReturningResult
+			return errors.New("orm: INSERT RETURNING returned no rows")
 		}
 		var id int64
 		if err := rows.Scan(&id); err != nil {
@@ -234,7 +235,7 @@ func (q *Query[T]) Update(ctx context.Context, t *T) error {
 		}
 	}
 	if pkVal == nil {
-		return ErrMissingPrimaryKey
+		return errors.New("orm: primary key value is required for Update")
 	}
 
 	setVals = append(setVals, pkVal)
@@ -249,7 +250,7 @@ func (q *Query[T]) Update(ctx context.Context, t *T) error {
 // Returns an error if no WHERE clauses are set (safety guard).
 func (q *Query[T]) Delete(ctx context.Context) error {
 	if len(q.wheres) == 0 {
-		return ErrDeleteWithoutWhere
+		return errors.New("orm: Delete without WHERE clause is not allowed")
 	}
 	query, args := q.buildDelete()
 	query, args = q.rewrite(query, args)
