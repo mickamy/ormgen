@@ -32,8 +32,10 @@ query logic as plain Go code you can open and read.
 
 **Why not sqlc?**
 
-sqlc is great if you prefer writing raw SQL. ormgen takes the opposite approach: you define Go structs, and the tool
-generates the query layer. If you prefer thinking in Go types over `.sql` files, ormgen may be a better fit.
+sqlc is great if you prefer writing raw SQL. But sqlc generates one Go function per SQL query — every combination of
+JOINs, filters, and sort orders requires a separate `.sql` file. As requirements grow, you end up with `GetUser`,
+`GetUserWithPosts`, `GetUserWithProfile`, `ListUsersByRole`, and so on. ormgen solves this with composable Scopes: a
+single `FindAll(ctx, scopes...)` method covers all of these combinations at the call site.
 
 **What ormgen is not:**
 
