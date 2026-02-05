@@ -88,7 +88,7 @@ type Post struct {
 go generate ./...
 ```
 
-This creates `user_gen.go` alongside the source file containing:
+This creates `user_query_gen.go` alongside the source file containing:
 
 - `Users(db) *orm.Query[User]` — factory function
 - `Posts(db) *orm.Query[Post]` — factory function

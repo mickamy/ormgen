@@ -65,7 +65,7 @@ func main() {
 	}
 
 	base := strings.TrimSuffix(filepath.Base(*source), ".go")
-	outFile := base + "_gen.go"
+	outFile := base + "_query_gen.go"
 	outPath := filepath.Join(outDir, outFile)
 
 	if err := os.WriteFile(outPath, src, 0o644); err != nil { //nolint:gosec // generated code should be world-readable
