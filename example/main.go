@@ -302,6 +302,18 @@ func main() {
 	for _, p := range batchPosts {
 		fmt.Printf("  Created: ID=%d UserID=%d Title=%q\n", p.ID, p.UserID, p.Title)
 	}
+
+	// UPSERT
+	fmt.Println("\n--- UPSERT ---")
+	upsertPost := &model.Post{ID: batchPosts[0].ID, UserID: users[0].ID, Title: "Batch post 1 (upserted)", Body: "updated body"}
+	if err := query.Posts(db).Upsert(ctx, upsertPost); err != nil {
+		log.Fatalf("upsert: %v", err)
+	}
+	got, err := query.Posts(db).Where("id = ?", batchPosts[0].ID).First(ctx)
+	if err != nil {
+		log.Fatalf("find after upsert: %v", err)
+	}
+	fmt.Printf("  After upsert: ID=%d Title=%q Body=%q\n", got.ID, got.Title, got.Body)
 }
 
 func openDB(dialect string) (*orm.DB, []string) {

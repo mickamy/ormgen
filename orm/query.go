@@ -384,6 +384,37 @@ func (q *Query[T]) CreateAll(ctx context.Context, items []*T) error {
 	return nil
 }
 
+// Upsert inserts a row or updates it on primary key conflict.
+// All non-PK columns are updated on conflict.
+// The primary key must be set on t before calling Upsert.
+func (q *Query[T]) Upsert(ctx context.Context, t *T) error {
+	columns, values := q.colValPairs(t, true) // always include PK
+
+	query := q.buildUpsert(columns)
+	query, values = q.rewrite(query, values)
+
+	d := q.db.dialect()
+	if d.UseReturning() && q.setPK != nil {
+		query += d.ReturningClause(q.pk)
+		rows, err := q.db.QueryContext(ctx, query, values...)
+		if err != nil {
+			return err //nolint:wrapcheck // pass through
+		}
+		defer func() { _ = rows.Close() }()
+		if rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return err //nolint:wrapcheck // pass through
+			}
+			q.setPK(t, id)
+		}
+		return rows.Err() //nolint:wrapcheck // pass through
+	}
+
+	_, err := q.db.ExecContext(ctx, query, values...)
+	return err //nolint:wrapcheck // pass through
+}
+
 // Update updates the row identified by the primary key of t.
 // All non-PK columns are SET.
 func (q *Query[T]) Update(ctx context.Context, t *T) error {
@@ -529,6 +560,44 @@ func (q *Query[T]) buildBatchInsert(columns []string, rowCount int) string {
 		q.quoteColumns(columns),
 		strings.Join(rows, ", "),
 	)
+}
+
+func (q *Query[T]) buildUpsert(columns []string) string {
+	placeholders := make([]string, len(columns))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "INSERT INTO %s (%s) VALUES (%s)",
+		q.qi(q.table),
+		q.quoteColumns(columns),
+		strings.Join(placeholders, ", "),
+	)
+
+	var updateCols []string
+	for _, col := range columns {
+		if col != q.pk {
+			updateCols = append(updateCols, col)
+		}
+	}
+
+	d := q.db.dialect()
+	if _, ok := d.(mysqlDialect); ok {
+		sets := make([]string, len(updateCols))
+		for i, col := range updateCols {
+			sets[i] = fmt.Sprintf("%s = VALUES(%s)", q.qi(col), q.qi(col))
+		}
+		fmt.Fprintf(&b, " ON DUPLICATE KEY UPDATE %s", strings.Join(sets, ", "))
+	} else {
+		sets := make([]string, len(updateCols))
+		for i, col := range updateCols {
+			sets[i] = fmt.Sprintf("%s = EXCLUDED.%s", q.qi(col), q.qi(col))
+		}
+		fmt.Fprintf(&b, " ON CONFLICT (%s) DO UPDATE SET %s", q.qi(q.pk), strings.Join(sets, ", "))
+	}
+
+	return b.String()
 }
 
 func (q *Query[T]) buildUpdate(setCols []string) string {

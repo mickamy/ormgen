@@ -439,3 +439,48 @@ func TestCreateAll(t *testing.T) {
 		})
 	}
 }
+
+func TestUpsert(t *testing.T) {
+	for _, ds := range dialects {
+		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := setupDB(t, ds)
+			ctx := t.Context()
+
+			// Insert via Upsert
+			u := &User{Name: "Alice", Email: "alice@example.com"}
+			if err := Users(db).Create(ctx, u); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			originalID := u.ID
+
+			// Upsert same PK → should update
+			u.Name = "Alice Updated"
+			u.Email = "alice.updated@example.com"
+			if err := Users(db).Upsert(ctx, u); err != nil {
+				t.Fatalf("Upsert: %v", err)
+			}
+
+			got, err := Users(db).Where("id = ?", originalID).First(ctx)
+			if err != nil {
+				t.Fatalf("First: %v", err)
+			}
+			if got.Name != "Alice Updated" {
+				t.Errorf("Name = %q, want %q", got.Name, "Alice Updated")
+			}
+			if got.Email != "alice.updated@example.com" {
+				t.Errorf("Email = %q, want %q", got.Email, "alice.updated@example.com")
+			}
+
+			// Should still be only 1 row
+			count, err := Users(db).Count(ctx)
+			if err != nil {
+				t.Fatalf("Count: %v", err)
+			}
+			if count != 1 {
+				t.Errorf("Count = %d, want 1", count)
+			}
+		})
+	}
+}
