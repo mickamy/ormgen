@@ -25,23 +25,23 @@ func New(db *sql.DB, d Dialect) *DB {
 }
 
 func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return db.raw.QueryContext(ctx, query, args...)
+	return db.raw.QueryContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return db.raw.ExecContext(ctx, query, args...)
+	return db.raw.ExecContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
-
-func (db *DB) dialect() Dialect { return db.d }
 
 // Begin starts a transaction.
 func (db *DB) Begin(ctx context.Context) (*Tx, error) {
 	tx, err := db.raw.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // thin wrapper
 	}
 	return &Tx{raw: tx, d: db.d}, nil
 }
+
+func (db *DB) dialect() Dialect { return db.d }
 
 // Tx wraps *sql.Tx with a Dialect and satisfies Querier.
 type Tx struct {
@@ -50,17 +50,17 @@ type Tx struct {
 }
 
 func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return tx.raw.QueryContext(ctx, query, args...)
+	return tx.raw.QueryContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
 
 func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return tx.raw.ExecContext(ctx, query, args...)
+	return tx.raw.ExecContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
 
-func (tx *Tx) dialect() Dialect { return tx.d }
-
 // Commit commits the transaction.
-func (tx *Tx) Commit() error { return tx.raw.Commit() }
+func (tx *Tx) Commit() error { return tx.raw.Commit() } //nolint:wrapcheck // thin wrapper
 
 // Rollback rolls back the transaction.
-func (tx *Tx) Rollback() error { return tx.raw.Rollback() }
+func (tx *Tx) Rollback() error { return tx.raw.Rollback() } //nolint:wrapcheck // thin wrapper
+
+func (tx *Tx) dialect() Dialect { return tx.d }

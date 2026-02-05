@@ -3,7 +3,6 @@ package orm
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -144,9 +143,9 @@ func (q *Query[T]) All(ctx context.Context) ([]T, error) {
 
 	rows, err := q.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // pass through
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []T
 	for rows.Next() {
@@ -156,7 +155,7 @@ func (q *Query[T]) All(ctx context.Context) ([]T, error) {
 		}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	return result, rows.Err() //nolint:wrapcheck // pass through
 }
 
 // First executes a SELECT with LIMIT 1 and returns the first row.
@@ -189,29 +188,29 @@ func (q *Query[T]) Create(ctx context.Context, t *T) error {
 		query += d.ReturningClause(q.pk)
 		rows, err := q.db.QueryContext(ctx, query, values...)
 		if err != nil {
-			return err
+			return err //nolint:wrapcheck // pass through
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
-			return errors.New("orm: INSERT RETURNING returned no rows")
+			return ErrNoReturningResult
 		}
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			return err
+			return err //nolint:wrapcheck // pass through
 		}
 		q.setPK(t, id)
-		return rows.Err()
+		return rows.Err() //nolint:wrapcheck // pass through
 	}
 
 	result, err := q.db.ExecContext(ctx, query, values...)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // pass through
 	}
 
 	if q.setPK != nil {
 		id, err := result.LastInsertId()
 		if err != nil {
-			return err
+			return err //nolint:wrapcheck // pass through
 		}
 		q.setPK(t, id)
 	}
@@ -235,7 +234,7 @@ func (q *Query[T]) Update(ctx context.Context, t *T) error {
 		}
 	}
 	if pkVal == nil {
-		return errors.New("orm: primary key value is required for Update")
+		return ErrMissingPrimaryKey
 	}
 
 	setVals = append(setVals, pkVal)
@@ -243,20 +242,20 @@ func (q *Query[T]) Update(ctx context.Context, t *T) error {
 	query, setVals = q.rewrite(query, setVals)
 
 	_, err := q.db.ExecContext(ctx, query, setVals...)
-	return err
+	return err //nolint:wrapcheck // pass through
 }
 
 // Delete deletes rows matching the accumulated WHERE clauses.
 // Returns an error if no WHERE clauses are set (safety guard).
 func (q *Query[T]) Delete(ctx context.Context) error {
 	if len(q.wheres) == 0 {
-		return errors.New("orm: Delete without WHERE clause is not allowed")
+		return ErrDeleteWithoutWhere
 	}
 	query, args := q.buildDelete()
 	query, args = q.rewrite(query, args)
 
 	_, err := q.db.ExecContext(ctx, query, args...)
-	return err
+	return err //nolint:wrapcheck // pass through
 }
 
 // --- SQL building ---
@@ -367,7 +366,7 @@ func (q *Query[T]) rewrite(query string, args []any) (string, []any) {
 	var b strings.Builder
 	b.Grow(len(query))
 	idx := 1
-	for i := 0; i < len(query); i++ {
+	for i := range len(query) {
 		if query[i] == '?' {
 			b.WriteString(d.Placeholder(idx))
 			idx++

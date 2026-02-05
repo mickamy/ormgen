@@ -6,6 +6,8 @@ import (
 	"errors"
 )
 
+var errMockNotImplemented = errors.New("mock: not implemented")
+
 // TestQuerier is a mock Querier that records executed queries.
 // Exported for use in orm_test package.
 type TestQuerier struct {
@@ -26,7 +28,7 @@ func NewTestQuerier(d Dialect) *TestQuerier {
 
 func (tq *TestQuerier) QueryContext(_ context.Context, query string, args ...any) (*sql.Rows, error) {
 	tq.Queries = append(tq.Queries, TestQuery{query, args})
-	return nil, errors.New("mock: not implemented")
+	return nil, errMockNotImplemented
 }
 
 func (tq *TestQuerier) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
@@ -34,14 +36,14 @@ func (tq *TestQuerier) ExecContext(_ context.Context, query string, args ...any)
 	return testResult{}, nil
 }
 
-func (tq *TestQuerier) dialect() Dialect { return tq.D }
-
 var _ Querier = (*TestQuerier)(nil)
 
 // LastQuery returns the most recently captured query, or panics if empty.
 func (tq *TestQuerier) LastQuery() TestQuery {
 	return tq.Queries[len(tq.Queries)-1]
 }
+
+func (tq *TestQuerier) dialect() Dialect { return tq.D }
 
 type testResult struct{}
 

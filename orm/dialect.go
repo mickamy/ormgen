@@ -34,13 +34,13 @@ var PostgreSQL Dialect = postgresDialect{}
 type mysqlDialect struct{}
 
 func (mysqlDialect) Placeholder(_ int) string        { return "?" }
-func (mysqlDialect) QuoteIdent(name string) string    { return "`" + name + "`" }
-func (mysqlDialect) UseReturning() bool               { return false }
-func (mysqlDialect) ReturningClause(_ string) string   { return "" }
+func (mysqlDialect) QuoteIdent(name string) string   { return "`" + name + "`" }
+func (mysqlDialect) UseReturning() bool              { return false }
+func (mysqlDialect) ReturningClause(_ string) string { return "" }
 
 type postgresDialect struct{}
 
-func (postgresDialect) Placeholder(index int) string       { return fmt.Sprintf("$%d", index) }
-func (postgresDialect) QuoteIdent(name string) string      { return `"` + name + `"` }
-func (postgresDialect) UseReturning() bool                  { return true }
-func (postgresDialect) ReturningClause(pk string) string    { return ` RETURNING "` + pk + `"` }
+func (postgresDialect) Placeholder(index int) string     { return fmt.Sprintf("$%d", index) }
+func (postgresDialect) QuoteIdent(name string) string    { return `"` + name + `"` }
+func (postgresDialect) UseReturning() bool               { return true }
+func (postgresDialect) ReturningClause(pk string) string { return ` RETURNING "` + pk + `"` }
