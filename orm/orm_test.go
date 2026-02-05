@@ -116,6 +116,8 @@ func setupDB(t *testing.T, ds dialectSetup) orm.Querier {
 func TestCRUD(t *testing.T) {
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
 			db := setupDB(t, ds)
 			ctx := t.Context()
 
@@ -165,6 +167,8 @@ func TestCRUD(t *testing.T) {
 func TestAll(t *testing.T) {
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
 			db := setupDB(t, ds)
 			ctx := t.Context()
 
@@ -201,6 +205,8 @@ func TestAll(t *testing.T) {
 func TestScopes(t *testing.T) {
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
 			db := setupDB(t, ds)
 			ctx := t.Context()
 
@@ -226,6 +232,8 @@ func TestScopes(t *testing.T) {
 func TestTransaction(t *testing.T) {
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
 			db := setupDB(t, ds)
 			ctx := t.Context()
 
@@ -277,6 +285,8 @@ func TestTransaction(t *testing.T) {
 func TestTransactionHelper(t *testing.T) {
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
+			t.Parallel()
+
 			db := setupDB(t, ds)
 			ctx := t.Context()
 
@@ -322,8 +332,6 @@ func TestTransactionHelper(t *testing.T) {
 }
 
 func TestCount(t *testing.T) {
-	t.Parallel()
-
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
 			t.Parallel()
@@ -360,8 +368,6 @@ func TestCount(t *testing.T) {
 }
 
 func TestExists(t *testing.T) {
-	t.Parallel()
-
 	for _, ds := range dialects {
 		t.Run(ds.name, func(t *testing.T) {
 			t.Parallel()
