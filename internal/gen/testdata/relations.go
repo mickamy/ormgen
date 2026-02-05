@@ -5,6 +5,14 @@ type Author struct {
 	Name string
 	// has_many: Author has many Articles
 	Articles []Article `rel:"has_many,foreign_key:author_id"`
+	// has_one: Author has one Profile
+	Profile *Profile `rel:"has_one,foreign_key:author_id"`
+}
+
+type Profile struct {
+	ID       int
+	AuthorID int
+	Bio      string
 }
 
 type Article struct {

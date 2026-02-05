@@ -249,6 +249,28 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	}
 	return nil
 }
+{{- else if eq .RelType "has_one"}}
+func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.ParentType}}) error {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]{{.KeyType}}, len(results))
+	for i := range results {
+		ids[i] = results[i].{{.ParentPKField}}
+	}
+	related, err := {{.TargetFactory}}(db).Scopes(scope.In("{{.ForeignKey}}", ids)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byFK := make(map[{{.KeyType}}]*{{.TargetType}})
+	for i := range related {
+		byFK[related[i].{{.ForeignKeyField}}] = &related[i]
+	}
+	for i := range results {
+		results[i].{{.FieldName}} = byFK[results[i].{{.ParentPKField}}]
+	}
+	return nil
+}
 {{- else}}
 func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.ParentType}}) error {
 	if len(results) == 0 {
@@ -298,7 +320,7 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix string) []rel
 			ParentPKField:   pk.Name,
 		}
 
-		if rel.RelType == "has_many" {
+		if rel.RelType == "has_many" || rel.RelType == "has_one" {
 			rd.KeyType = pk.GoType
 			rd.JoinTargetTable = targetTable
 			rd.JoinTargetColumn = rel.ForeignKey

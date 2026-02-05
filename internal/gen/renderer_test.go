@@ -171,6 +171,7 @@ func TestRenderRelations(t *testing.T) {
 
 	findStruct(t, infos, "Author").TableName = "authors"
 	findStruct(t, infos, "Article").TableName = "articles"
+	findStruct(t, infos, "Profile").TableName = "profiles"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {
@@ -193,11 +194,15 @@ func TestRenderRelations(t *testing.T) {
 		"func preloadArticleAuthor(ctx context.Context, db orm.Querier, results []Article)",
 		`scope.In("id", ids)`,
 		"Authors(db)",
+		// has_one preloader
+		"func preloadAuthorProfile(ctx context.Context, db orm.Querier, results []Author)",
 		// RegisterJoin
 		`q.RegisterJoin("Articles"`,
+		`q.RegisterJoin("Profile"`,
 		`q.RegisterJoin("Author"`,
 		// RegisterPreloader
 		`q.RegisterPreloader("Articles", preloadAuthorArticles)`,
+		`q.RegisterPreloader("Profile", preloadAuthorProfile)`,
 		`q.RegisterPreloader("Author", preloadArticleAuthor)`,
 		// Imports
 		`"context"`,

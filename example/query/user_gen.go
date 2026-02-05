@@ -21,6 +21,11 @@ func Users(db orm.Querier) *orm.Query[model.User] {
 		SourceTable: "users", SourceColumn: "id",
 	})
 	q.RegisterPreloader("Posts", preloadUserPosts)
+	q.RegisterJoin("Profile", orm.JoinConfig{
+		TargetTable: "profiles", TargetColumn: "user_id",
+		SourceTable: "users", SourceColumn: "id",
+	})
+	q.RegisterPreloader("Profile", preloadUserProfile)
 	return q
 }
 
@@ -79,6 +84,27 @@ func preloadUserPosts(ctx context.Context, db orm.Querier, results []model.User)
 	}
 	for i := range results {
 		results[i].Posts = byFK[results[i].ID]
+	}
+	return nil
+}
+func preloadUserProfile(ctx context.Context, db orm.Querier, results []model.User) error {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]int, len(results))
+	for i := range results {
+		ids[i] = results[i].ID
+	}
+	related, err := Profiles(db).Scopes(scope.In("user_id", ids)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byFK := make(map[int]*model.Profile)
+	for i := range related {
+		byFK[related[i].UserID] = &related[i]
+	}
+	for i := range results {
+		results[i].Profile = byFK[results[i].ID]
 	}
 	return nil
 }

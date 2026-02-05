@@ -154,46 +154,67 @@ func TestParseRelations(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if len(infos) != 2 {
-		t.Fatalf("len(infos) = %d, want 2", len(infos))
+	if len(infos) != 3 {
+		t.Fatalf("len(infos) = %d, want 3", len(infos))
 	}
 
-	t.Run("Author has_many Articles", func(t *testing.T) {
+	t.Run("Author has_many Articles and has_one Profile", func(t *testing.T) {
 		t.Parallel()
 
 		info := infos[0]
 		if info.Name != "Author" {
 			t.Fatalf("Name = %q, want %q", info.Name, "Author")
 		}
-		if len(info.Relations) != 1 {
-			t.Fatalf("len(Relations) = %d, want 1", len(info.Relations))
+		if len(info.Relations) != 2 {
+			t.Fatalf("len(Relations) = %d, want 2", len(info.Relations))
 		}
 
-		rel := info.Relations[0]
-		if rel.FieldName != "Articles" {
-			t.Errorf("FieldName = %q, want %q", rel.FieldName, "Articles")
+		rel1 := info.Relations[0]
+		if rel1.FieldName != "Articles" {
+			t.Errorf("FieldName = %q, want %q", rel1.FieldName, "Articles")
 		}
-		if rel.TargetType != "Article" {
-			t.Errorf("TargetType = %q, want %q", rel.TargetType, "Article")
+		if rel1.TargetType != "Article" {
+			t.Errorf("TargetType = %q, want %q", rel1.TargetType, "Article")
 		}
-		if rel.RelType != "has_many" {
-			t.Errorf("RelType = %q, want %q", rel.RelType, "has_many")
+		if rel1.RelType != "has_many" {
+			t.Errorf("RelType = %q, want %q", rel1.RelType, "has_many")
 		}
-		if rel.ForeignKey != "author_id" {
-			t.Errorf("ForeignKey = %q, want %q", rel.ForeignKey, "author_id")
+		if rel1.ForeignKey != "author_id" {
+			t.Errorf("ForeignKey = %q, want %q", rel1.ForeignKey, "author_id")
 		}
-		if !rel.IsSlice {
+		if !rel1.IsSlice {
 			t.Error("IsSlice = false, want true")
 		}
-		if rel.IsPointer {
+		if rel1.IsPointer {
 			t.Error("IsPointer = true, want false")
+		}
+
+		// has_one
+		rel2 := info.Relations[1]
+		if rel2.FieldName != "Profile" {
+			t.Errorf("FieldName = %q, want %q", rel2.FieldName, "Profile")
+		}
+		if rel2.TargetType != "Profile" {
+			t.Errorf("TargetType = %q, want %q", rel2.TargetType, "Profile")
+		}
+		if rel2.RelType != "has_one" {
+			t.Errorf("RelType = %q, want %q", rel2.RelType, "has_one")
+		}
+		if rel2.ForeignKey != "author_id" {
+			t.Errorf("ForeignKey = %q, want %q", rel2.ForeignKey, "author_id")
+		}
+		if rel2.IsSlice {
+			t.Error("IsSlice = true, want false")
+		}
+		if !rel2.IsPointer {
+			t.Error("IsPointer = false, want true")
 		}
 	})
 
 	t.Run("Article belongs_to Author", func(t *testing.T) {
 		t.Parallel()
 
-		info := infos[1]
+		info := infos[2]
 		if info.Name != "Article" {
 			t.Fatalf("Name = %q, want %q", info.Name, "Article")
 		}

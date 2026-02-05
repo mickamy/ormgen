@@ -34,6 +34,12 @@ var createTablesMySQL = []string{
 		body TEXT NOT NULL,
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	)`,
+	`CREATE TABLE profiles (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id INT NOT NULL UNIQUE,
+		bio TEXT NOT NULL,
+		FOREIGN KEY (user_id) REFERENCES users(id)
+	)`,
 }
 
 var createTablesPostgreSQL = []string{
@@ -49,6 +55,11 @@ var createTablesPostgreSQL = []string{
 		title VARCHAR(255) NOT NULL,
 		body TEXT NOT NULL
 	)`,
+	`CREATE TABLE profiles (
+		id SERIAL PRIMARY KEY,
+		user_id INT NOT NULL UNIQUE REFERENCES users(id),
+		bio TEXT NOT NULL
+	)`,
 }
 
 func main() {
@@ -61,7 +72,7 @@ func main() {
 
 	// CREATE TABLE
 	fmt.Println("--- CREATE TABLE ---")
-	for _, table := range []string{"posts", "users"} {
+	for _, table := range []string{"profiles", "posts", "users"} {
 		if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table)); err != nil {
 			log.Fatalf("drop: %v", err)
 		}
@@ -315,6 +326,34 @@ func main() {
 		log.Fatalf("find after upsert: %v", err)
 	}
 	fmt.Printf("  After upsert: ID=%d Title=%q Body=%q\n", got.ID, got.Title, got.Body)
+
+	// PRELOAD (has_one)
+	fmt.Println("\n--- PRELOAD (has_one) ---")
+	profileData := []struct {
+		userIdx int
+		bio     string
+	}{
+		{0, "Alice's bio"},
+		{2, "Charlie's bio"},
+		{4, "Eve's bio"},
+	}
+	for _, pd := range profileData {
+		p := &model.Profile{UserID: users[pd.userIdx].ID, Bio: pd.bio}
+		if err := query.Profiles(db).Create(ctx, p); err != nil {
+			log.Fatalf("create profile: %v", err)
+		}
+	}
+	usersWithProfile, err := query.Users(db).Preload("Profile").OrderBy("id").All(ctx)
+	if err != nil {
+		log.Fatalf("preload profile: %v", err)
+	}
+	for _, u := range usersWithProfile {
+		if u.Profile != nil {
+			fmt.Printf("  User: ID=%d Name=%s Bio=%q\n", u.ID, u.Name, u.Profile.Bio)
+		} else {
+			fmt.Printf("  User: ID=%d Name=%s (no profile)\n", u.ID, u.Name)
+		}
+	}
 }
 
 func openDB(dialect string) (*orm.DB, []string) {
