@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -221,6 +222,43 @@ func main() {
 	}
 	for _, p := range postsWithUser {
 		fmt.Printf("  Post: ID=%d Title=%q Author=%s\n", p.ID, p.Title, p.User.Name)
+	}
+
+	// TRANSACTION (commit)
+	fmt.Println("\n--- TRANSACTION (commit) ---")
+	err = db.Transaction(ctx, func(tx *orm.Tx) error {
+		u := &model.User{Name: "TxUser", Email: "tx@example.com", CreatedAt: time.Now()}
+		if err := query.Users(tx).Create(ctx, u); err != nil {
+			return err
+		}
+		p := &model.Post{UserID: u.ID, Title: "TxUser's post", Body: "created in transaction"}
+		if err := query.Posts(tx).Create(ctx, p); err != nil {
+			return err
+		}
+		fmt.Printf("  In tx: created User ID=%d and Post ID=%d\n", u.ID, p.ID)
+		return nil // → commit
+	})
+	if err != nil {
+		log.Fatalf("transaction commit: %v", err)
+	}
+	fmt.Println("  Transaction committed successfully.")
+
+	// TRANSACTION (rollback)
+	fmt.Println("\n--- TRANSACTION (rollback) ---")
+	err = db.Transaction(ctx, func(tx *orm.Tx) error {
+		u := &model.User{Name: "GhostUser", Email: "ghost@example.com", CreatedAt: time.Now()}
+		if err := query.Users(tx).Create(ctx, u); err != nil {
+			return err
+		}
+		fmt.Printf("  In tx: created User ID=%d (will be rolled back)\n", u.ID)
+		return errors.New("intentional error")
+	})
+	fmt.Printf("  Transaction returned error: %v\n", err)
+
+	// Verify rollback
+	_, err = query.Users(db).Where("name = ?", "GhostUser").First(ctx)
+	if err != nil {
+		fmt.Println("  GhostUser not found — rollback confirmed.")
 	}
 }
 

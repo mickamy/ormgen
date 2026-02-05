@@ -41,6 +41,30 @@ func (db *DB) Begin(ctx context.Context) (*Tx, error) {
 	return &Tx{raw: tx, d: db.d}, nil
 }
 
+// Transaction executes fn within a transaction.
+// If fn returns nil the transaction is committed.
+// If fn returns an error or panics the transaction is rolled back.
+func (db *DB) Transaction(ctx context.Context, fn func(tx *Tx) error) (err error) {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	err = fn(tx)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (db *DB) dialect() Dialect { return db.d }
 
 // Tx wraps *sql.Tx with a Dialect and satisfies Querier.

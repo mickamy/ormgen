@@ -60,10 +60,10 @@ func Users(db orm.Querier) *orm.Query[User] {
 }
 
 type dialectSetup struct {
-	name    string
-	driver  string
-	dsn     string
-	dialect orm.Dialect
+	name        string
+	driver      string
+	dsn         string
+	dialect     orm.Dialect
 	createTable string
 }
 
@@ -267,6 +267,53 @@ func TestTransaction(t *testing.T) {
 				t.Fatalf("Rollback: %v", err)
 			}
 			_, err = Users(db).Where("name = ?", "RollbackUser").First(ctx)
+			if err != orm.ErrNotFound {
+				t.Errorf("expected ErrNotFound after rollback, got %v", err)
+			}
+		})
+	}
+}
+
+func TestTransactionHelper(t *testing.T) {
+	for _, ds := range dialects {
+		t.Run(ds.name, func(t *testing.T) {
+			db := setupDB(t, ds)
+			ctx := t.Context()
+
+			ormDB, ok := db.(*orm.DB)
+			if !ok {
+				t.Fatal("expected *orm.DB")
+			}
+
+			// Commit: fn returns nil → committed
+			err := ormDB.Transaction(ctx, func(tx *orm.Tx) error {
+				u := &User{Name: "TxHelperCommit", Email: "helper@example.com"}
+				return Users(tx).Create(ctx, u)
+			})
+			if err != nil {
+				t.Fatalf("Transaction commit: %v", err)
+			}
+			got, err := Users(db).Where("name = ?", "TxHelperCommit").First(ctx)
+			if err != nil {
+				t.Fatalf("First after commit: %v", err)
+			}
+			if got.Name != "TxHelperCommit" {
+				t.Errorf("Name = %q, want %q", got.Name, "TxHelperCommit")
+			}
+
+			// Rollback: fn returns error → rolled back
+			testErr := fmt.Errorf("intentional error")
+			err = ormDB.Transaction(ctx, func(tx *orm.Tx) error {
+				u := &User{Name: "TxHelperRollback", Email: "rollback@example.com"}
+				if err := Users(tx).Create(ctx, u); err != nil {
+					return err
+				}
+				return testErr
+			})
+			if err != testErr {
+				t.Fatalf("expected testErr, got %v", err)
+			}
+			_, err = Users(db).Where("name = ?", "TxHelperRollback").First(ctx)
 			if err != orm.ErrNotFound {
 				t.Errorf("expected ErrNotFound after rollback, got %v", err)
 			}
