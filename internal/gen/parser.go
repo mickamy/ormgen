@@ -23,10 +23,12 @@ type FieldInfo struct {
 type RelationInfo struct {
 	FieldName  string // Go field name, e.g. "Posts" or "User"
 	TargetType string // Target struct name, e.g. "Post" or "User"
-	RelType    string // "has_many" or "belongs_to"
+	RelType    string // "has_many", "belongs_to", "has_one", or "many_to_many"
 	ForeignKey string // FK column name, e.g. "user_id"
-	IsSlice    bool   // true for has_many ([]Post)
-	IsPointer  bool   // true for belongs_to (*User)
+	IsSlice    bool   // true for has_many / many_to_many ([]Post)
+	IsPointer  bool   // true for belongs_to / has_one (*User)
+	JoinTable  string // many_to_many only: join table name, e.g. "user_tags"
+	References string // many_to_many only: target FK in join table, e.g. "tag_id"
 }
 
 // StructInfo holds parsed metadata for the target struct.
@@ -162,7 +164,7 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 
 // parseRelations extracts rel-tagged fields from an AST struct type.
 func parseRelations(st *ast.StructType) []RelationInfo {
-	var rels []RelationInfo
+	rels := make([]RelationInfo, 0, len(st.Fields.List))
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 || field.Tag == nil {
 			continue
@@ -176,12 +178,18 @@ func parseRelations(st *ast.StructType) []RelationInfo {
 
 		ri := RelationInfo{FieldName: field.Names[0].Name}
 
-		// Parse rel tag: "has_many,foreign_key:user_id"
+		// Parse rel tag: "has_many,foreign_key:user_id" or
+		// "many_to_many,join_table:user_tags,foreign_key:user_id,references:tag_id"
 		for _, part := range strings.Split(relTag, ",") {
 			part = strings.TrimSpace(part)
 			if k, v, found := strings.Cut(part, ":"); found {
-				if k == "foreign_key" {
+				switch k {
+				case "foreign_key":
 					ri.ForeignKey = v
+				case "join_table":
+					ri.JoinTable = v
+				case "references":
+					ri.References = v
 				}
 			} else {
 				ri.RelType = part
@@ -191,9 +199,13 @@ func parseRelations(st *ast.StructType) []RelationInfo {
 		// Determine target type from field type.
 		ri.TargetType, ri.IsSlice, ri.IsPointer = extractTargetType(field.Type)
 
-		if ri.RelType != "" && ri.ForeignKey != "" && ri.TargetType != "" {
-			rels = append(rels, ri)
+		if ri.RelType == "" || ri.ForeignKey == "" || ri.TargetType == "" {
+			continue
 		}
+		if ri.RelType == "many_to_many" && (ri.JoinTable == "" || ri.References == "") {
+			continue
+		}
+		rels = append(rels, ri)
 	}
 	return rels
 }

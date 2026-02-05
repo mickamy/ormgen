@@ -40,6 +40,17 @@ var createTablesMySQL = []string{
 		bio TEXT NOT NULL,
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	)`,
+	`CREATE TABLE tags (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		name VARCHAR(255) NOT NULL
+	)`,
+	`CREATE TABLE user_tags (
+		user_id INT NOT NULL,
+		tag_id INT NOT NULL,
+		PRIMARY KEY (user_id, tag_id),
+		FOREIGN KEY (user_id) REFERENCES users(id),
+		FOREIGN KEY (tag_id) REFERENCES tags(id)
+	)`,
 }
 
 var createTablesPostgreSQL = []string{
@@ -60,6 +71,15 @@ var createTablesPostgreSQL = []string{
 		user_id INT NOT NULL UNIQUE REFERENCES users(id),
 		bio TEXT NOT NULL
 	)`,
+	`CREATE TABLE tags (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(255) NOT NULL
+	)`,
+	`CREATE TABLE user_tags (
+		user_id INT NOT NULL REFERENCES users(id),
+		tag_id INT NOT NULL REFERENCES tags(id),
+		PRIMARY KEY (user_id, tag_id)
+	)`,
 }
 
 func main() {
@@ -72,7 +92,7 @@ func main() {
 
 	// CREATE TABLE
 	fmt.Println("--- CREATE TABLE ---")
-	for _, table := range []string{"profiles", "posts", "users"} {
+	for _, table := range []string{"user_tags", "tags", "profiles", "posts", "users"} {
 		if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table)); err != nil {
 			log.Fatalf("drop: %v", err)
 		}
@@ -353,6 +373,48 @@ func main() {
 		} else {
 			fmt.Printf("  User: ID=%d Name=%s (no profile)\n", u.ID, u.Name)
 		}
+	}
+
+	// PRELOAD (many_to_many)
+	fmt.Println("\n--- PRELOAD (many_to_many) ---")
+	tagNames := []string{"Go", "ORM", "SQL"}
+	tags := make([]*model.Tag, len(tagNames))
+	for i, name := range tagNames {
+		t := &model.Tag{Name: name}
+		if err := query.Tags(db).Create(ctx, t); err != nil {
+			log.Fatalf("create tag: %v", err)
+		}
+		tags[i] = t
+		fmt.Printf("Created tag: ID=%d Name=%s\n", t.ID, t.Name)
+	}
+
+	// Associate tags with users via user_tags join table
+	userTagPairs := []struct {
+		userIdx int
+		tagIdx  int
+	}{
+		{0, 0}, {0, 1}, {0, 2}, // Alice: Go, ORM, SQL
+		{2, 0}, {2, 2}, // Charlie: Go, SQL
+		{4, 1}, // Eve: ORM
+	}
+	for _, p := range userTagPairs {
+		if _, err := db.ExecContext(ctx,
+			fmt.Sprintf("INSERT INTO user_tags (user_id, tag_id) VALUES (%d, %d)", users[p.userIdx].ID, tags[p.tagIdx].ID),
+		); err != nil {
+			log.Fatalf("insert user_tag: %v", err)
+		}
+	}
+
+	usersWithTags, err := query.Users(db).Preload("Tags").OrderBy("id").All(ctx)
+	if err != nil {
+		log.Fatalf("preload tags: %v", err)
+	}
+	for _, u := range usersWithTags {
+		tagStrs := make([]string, len(u.Tags))
+		for i, t := range u.Tags {
+			tagStrs[i] = t.Name
+		}
+		fmt.Printf("  User: ID=%d Name=%s Tags=%v\n", u.ID, u.Name, tagStrs)
 	}
 }
 

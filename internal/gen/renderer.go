@@ -123,7 +123,7 @@ type relationTemplateData struct {
 	TargetFactory    string // "Posts"
 	ForeignKey       string // "user_id"
 	ForeignKeyField  string // "UserID"
-	RelType          string // "has_many" or "belongs_to"
+	RelType          string // "has_many", "belongs_to", "has_one", or "many_to_many"
 	PreloaderName    string // "preloadUserPosts"
 	KeyType          string // Go type for map key ("int")
 	ParentPKField    string // "ID"
@@ -131,6 +131,10 @@ type relationTemplateData struct {
 	JoinTargetColumn string
 	JoinSourceTable  string
 	JoinSourceColumn string
+	JoinTable        string // many_to_many only: "user_tags"
+	References       string // many_to_many only: "tag_id"
+	TargetTable      string // many_to_many only: target table name "tags"
+	TargetPKColumn   string // many_to_many only: target PK column "id"
 }
 
 func (d templateData) NonPKFields() []FieldInfo {
@@ -178,10 +182,12 @@ func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 		{{.ScanFunc}}, {{.ColValFunc}}, {{if .IsIntPK}}{{.SetPKFunc}}{{else}}nil{{end}},
 	)
 	{{- range .Relations}}
+	{{- if ne .RelType "many_to_many"}}
 	q.RegisterJoin("{{.FieldName}}", orm.JoinConfig{
 		TargetTable: "{{.JoinTargetTable}}", TargetColumn: "{{.JoinTargetColumn}}",
 		SourceTable: "{{.JoinSourceTable}}", SourceColumn: "{{.JoinSourceColumn}}",
 	})
+	{{- end}}
 	q.RegisterPreloader("{{.FieldName}}", {{.PreloaderName}})
 	{{- end}}
 	return q
@@ -271,6 +277,43 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	}
 	return nil
 }
+{{- else if eq .RelType "many_to_many"}}
+func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.ParentType}}) error {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]{{.KeyType}}, len(results))
+	for i := range results {
+		ids[i] = results[i].{{.ParentPKField}}
+	}
+	pairs, err := orm.QueryJoinTable[{{.KeyType}}, {{.KeyType}}]( //nolint:lll
+		ctx, db, "{{.JoinTable}}", "{{.ForeignKey}}", "{{.References}}", ids,
+	)
+	if err != nil {
+		return err
+	}
+	targetIDs := orm.UniqueTargets(pairs)
+	related, err := {{.TargetFactory}}(db).Scopes(scope.In("{{.TargetPKColumn}}", targetIDs)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byPK := make(map[{{.KeyType}}]{{.TargetType}})
+	for _, r := range related {
+		byPK[r.ID] = r
+	}
+	grouped := orm.GroupBySource(pairs)
+	for i := range results {
+		tIDs := grouped[results[i].{{.ParentPKField}}]
+		items := make([]{{.TargetType}}, 0, len(tIDs))
+		for _, tid := range tIDs {
+			if v, ok := byPK[tid]; ok {
+				items = append(items, v)
+			}
+		}
+		results[i].{{.FieldName}} = items
+	}
+	return nil
+}
 {{- else}}
 func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.ParentType}}) error {
 	if len(results) == 0 {
@@ -320,13 +363,20 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix string) []rel
 			ParentPKField:   pk.Name,
 		}
 
-		if rel.RelType == "has_many" || rel.RelType == "has_one" {
+		switch rel.RelType {
+		case "has_many", "has_one":
 			rd.KeyType = pk.GoType
 			rd.JoinTargetTable = targetTable
 			rd.JoinTargetColumn = rel.ForeignKey
 			rd.JoinSourceTable = info.TableName
 			rd.JoinSourceColumn = pk.Column
-		} else { // belongs_to
+		case "many_to_many":
+			rd.KeyType = pk.GoType
+			rd.JoinTable = rel.JoinTable
+			rd.References = rel.References
+			rd.TargetTable = targetTable
+			rd.TargetPKColumn = "id" // convention
+		default: // belongs_to
 			rd.KeyType = lookupFieldType(info, rel.ForeignKey)
 			rd.JoinTargetTable = targetTable
 			rd.JoinTargetColumn = "id" // convention: target PK is "id"

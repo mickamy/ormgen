@@ -172,6 +172,7 @@ func TestRenderRelations(t *testing.T) {
 	findStruct(t, infos, "Author").TableName = "authors"
 	findStruct(t, infos, "Article").TableName = "articles"
 	findStruct(t, infos, "Profile").TableName = "profiles"
+	findStruct(t, infos, "Tag").TableName = "tags"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {
@@ -204,13 +205,32 @@ func TestRenderRelations(t *testing.T) {
 		`q.RegisterPreloader("Articles", preloadAuthorArticles)`,
 		`q.RegisterPreloader("Profile", preloadAuthorProfile)`,
 		`q.RegisterPreloader("Author", preloadArticleAuthor)`,
+		`q.RegisterPreloader("Tags", preloadAuthorTags)`,
+		// many_to_many preloader
+		"func preloadAuthorTags(ctx context.Context, db orm.Querier, results []Author)",
+		`orm.QueryJoinTable[int, int](`,
+		`ctx, db, "author_tags", "author_id", "tag_id", ids,`,
+		"orm.UniqueTargets(pairs)",
+		"orm.GroupBySource(pairs)",
+		`scope.In("id", targetIDs)`,
+		"Tags(db)",
+		// No RegisterJoin for many_to_many
 		// Imports
 		`"context"`,
 		`"github.com/mickamy/ormgen/scope"`,
 	}
+	// many_to_many should NOT generate RegisterJoin
+	negativeChecks := []string{
+		`q.RegisterJoin("Tags"`,
+	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
 			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+	for _, unwanted := range negativeChecks {
+		if strings.Contains(code, unwanted) {
+			t.Errorf("unexpected %q in generated code:\n%s", unwanted, code)
 		}
 	}
 }

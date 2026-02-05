@@ -146,7 +146,7 @@ func TestParseInferredColumns(t *testing.T) {
 	}
 }
 
-func TestParseRelations(t *testing.T) {
+func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with many assertions
 	t.Parallel()
 
 	infos, err := gen.Parse(testdataPath("relations.go"))
@@ -154,19 +154,19 @@ func TestParseRelations(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if len(infos) != 3 {
-		t.Fatalf("len(infos) = %d, want 3", len(infos))
+	if len(infos) != 4 {
+		t.Fatalf("len(infos) = %d, want 4", len(infos))
 	}
 
-	t.Run("Author has_many Articles and has_one Profile", func(t *testing.T) {
+	t.Run("Author has_many Articles, has_one Profile, many_to_many Tags", func(t *testing.T) {
 		t.Parallel()
 
 		info := infos[0]
 		if info.Name != "Author" {
 			t.Fatalf("Name = %q, want %q", info.Name, "Author")
 		}
-		if len(info.Relations) != 2 {
-			t.Fatalf("len(Relations) = %d, want 2", len(info.Relations))
+		if len(info.Relations) != 3 {
+			t.Fatalf("len(Relations) = %d, want 3", len(info.Relations))
 		}
 
 		rel1 := info.Relations[0]
@@ -209,12 +209,39 @@ func TestParseRelations(t *testing.T) {
 		if !rel2.IsPointer {
 			t.Error("IsPointer = false, want true")
 		}
+
+		// many_to_many
+		rel3 := info.Relations[2]
+		if rel3.FieldName != "Tags" {
+			t.Errorf("FieldName = %q, want %q", rel3.FieldName, "Tags")
+		}
+		if rel3.TargetType != "Tag" {
+			t.Errorf("TargetType = %q, want %q", rel3.TargetType, "Tag")
+		}
+		if rel3.RelType != "many_to_many" {
+			t.Errorf("RelType = %q, want %q", rel3.RelType, "many_to_many")
+		}
+		if rel3.ForeignKey != "author_id" {
+			t.Errorf("ForeignKey = %q, want %q", rel3.ForeignKey, "author_id")
+		}
+		if rel3.JoinTable != "author_tags" {
+			t.Errorf("JoinTable = %q, want %q", rel3.JoinTable, "author_tags")
+		}
+		if rel3.References != "tag_id" {
+			t.Errorf("References = %q, want %q", rel3.References, "tag_id")
+		}
+		if !rel3.IsSlice {
+			t.Error("IsSlice = false, want true")
+		}
+		if rel3.IsPointer {
+			t.Error("IsPointer = true, want false")
+		}
 	})
 
 	t.Run("Article belongs_to Author", func(t *testing.T) {
 		t.Parallel()
 
-		info := infos[2]
+		info := infos[3]
 		if info.Name != "Article" {
 			t.Fatalf("Name = %q, want %q", info.Name, "Article")
 		}

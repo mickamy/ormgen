@@ -26,6 +26,7 @@ func Users(db orm.Querier) *orm.Query[model.User] {
 		SourceTable: "users", SourceColumn: "id",
 	})
 	q.RegisterPreloader("Profile", preloadUserProfile)
+	q.RegisterPreloader("Tags", preloadUserTags)
 	return q
 }
 
@@ -105,6 +106,42 @@ func preloadUserProfile(ctx context.Context, db orm.Querier, results []model.Use
 	}
 	for i := range results {
 		results[i].Profile = byFK[results[i].ID]
+	}
+	return nil
+}
+func preloadUserTags(ctx context.Context, db orm.Querier, results []model.User) error {
+	if len(results) == 0 {
+		return nil
+	}
+	ids := make([]int, len(results))
+	for i := range results {
+		ids[i] = results[i].ID
+	}
+	pairs, err := orm.QueryJoinTable[int, int]( //nolint:lll
+		ctx, db, "user_tags", "user_id", "tag_id", ids,
+	)
+	if err != nil {
+		return err
+	}
+	targetIDs := orm.UniqueTargets(pairs)
+	related, err := Tags(db).Scopes(scope.In("id", targetIDs)).All(ctx)
+	if err != nil {
+		return err
+	}
+	byPK := make(map[int]model.Tag)
+	for _, r := range related {
+		byPK[r.ID] = r
+	}
+	grouped := orm.GroupBySource(pairs)
+	for i := range results {
+		tIDs := grouped[results[i].ID]
+		items := make([]model.Tag, 0, len(tIDs))
+		for _, tid := range tIDs {
+			if v, ok := byPK[tid]; ok {
+				items = append(items, v)
+			}
+		}
+		results[i].Tags = items
 	}
 	return nil
 }
