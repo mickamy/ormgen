@@ -111,9 +111,9 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 
 	goType := typeToString(field.Type)
 
-	// Defaults: column inferred from field name, no primary key.
+	// Defaults: column inferred from field name, ID field is primary key.
 	column := naming.CamelToSnake(name)
-	primaryKey := false
+	primaryKey := name == "ID"
 
 	// Override with db tag if present.
 	if field.Tag != nil {
