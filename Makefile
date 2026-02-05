@@ -1,0 +1,46 @@
+APP_NAME = ormgen
+BUILD_DIR = bin
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS = -ldflags "-X main.version=$(VERSION)"
+CMD_DIR = ./
+
+.PHONY: all build install uninstall clean test lint
+
+all: build
+
+build:
+	@echo "Building $(APP_NAME)..."
+	go build $(LDFLAGS) -o bin/$(APP_NAME) $(CMD_DIR)
+
+install:
+	@echo "Installing $(APP_NAME)..."
+	@bin_dir=$$(go env GOBIN); \
+	if [ -z "$$bin_dir" ]; then \
+		bin_dir=$$(go env GOPATH)/bin; \
+	fi; \
+	mkdir -p "$$bin_dir"; \
+	echo "Installing to $$bin_dir/$(APP_NAME)"; \
+	go build $(LDFLAGS) -o "$$bin_dir/$(APP_NAME)" $(CMD_DIR)
+
+uninstall:
+	@echo "Uninstalling $(APP_NAME)..."
+	@bin_dir=$$(go env GOBIN); \
+	if [ -z "$$bin_dir" ]; then \
+		bin_dir=$$(go env GOPATH)/bin; \
+	fi; \
+	echo "Removing $$bin_dir/$(APP_NAME)"; \
+	rm -f "$$bin_dir/$(APP_NAME)"
+
+clean:
+	@echo "Cleaning up..."
+	rm -rf $(BUILD_DIR)
+
+test:
+	go test ./...
+
+lint:
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		@echo "golangci-lint is not installed"; \
+		exit 1; \
+	}
+	golangci-lint run
