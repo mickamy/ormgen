@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -77,7 +78,7 @@ func main() {
 
 // resolveImportPath returns the Go import path for the package in dir.
 func resolveImportPath(dir string) (string, error) {
-	cmd := exec.Command("go", "list", "-json", ".")
+	cmd := exec.CommandContext(context.Background(), "go", "list", "-json", ".")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

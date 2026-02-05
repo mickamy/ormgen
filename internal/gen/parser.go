@@ -180,7 +180,7 @@ func parseRelations(st *ast.StructType) []RelationInfo {
 
 		// Parse rel tag: "has_many,foreign_key:user_id" or
 		// "many_to_many,join_table:user_tags,foreign_key:user_id,references:tag_id"
-		for _, part := range strings.Split(relTag, ",") {
+		for part := range strings.SplitSeq(relTag, ",") {
 			part = strings.TrimSpace(part)
 			if k, v, found := strings.Cut(part, ":"); found {
 				switch k {
