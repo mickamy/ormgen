@@ -65,6 +65,9 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *Tx) error) (err error
 	return tx.Commit()
 }
 
+// Close closes the underlying *sql.DB.
+func (db *DB) Close() error { return db.raw.Close() } //nolint:wrapcheck // thin wrapper
+
 func (db *DB) dialect() Dialect { return db.d }
 
 // Tx wraps *sql.Tx with a Dialect and satisfies Querier.
