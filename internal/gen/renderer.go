@@ -55,13 +55,13 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		data := templateData{
 			TypeName:    typePrefix + info.Name,
 			TableName:   info.TableName,
-			FactoryName: exportedName(info.TableName),
+			FactoryName: naming.SnakeToCamel(info.TableName),
 			PK:          pk,
 			Fields:      info.Fields,
 			ScanFunc:    unexportedName("scan" + info.Name),
 			ColValFunc:  unexportedName(info.Name + "ColumnValuePairs"),
 			SetPKFunc:   unexportedName("set" + info.Name + "PK"),
-			ColumnsVar:  unexportedName(info.TableName + "Columns"),
+			ColumnsVar:  unexportedName(naming.SnakeToCamel(info.TableName) + "Columns"),
 			IsIntPK:     isIntType(pk.GoType),
 			Relations:   buildRelationData(info, pk, typePrefix),
 		}
@@ -348,7 +348,7 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix string) []rel
 	rels := make([]relationTemplateData, 0, len(info.Relations))
 	for _, rel := range info.Relations {
 		targetTable := inflection.Plural(naming.CamelToSnake(rel.TargetType))
-		targetFactory := exportedName(targetTable)
+		targetFactory := naming.SnakeToCamel(targetTable)
 		fkField := naming.SnakeToCamel(rel.ForeignKey)
 
 		rd := relationTemplateData{
@@ -396,15 +396,6 @@ func lookupFieldType(info *StructInfo, column string) string {
 		}
 	}
 	return "int" // fallback
-}
-
-func exportedName(s string) string {
-	if s == "" {
-		return s
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
 }
 
 func unexportedName(s string) string {
