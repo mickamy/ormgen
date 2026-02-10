@@ -69,6 +69,10 @@ func main() {
 	outFile := base + "_query_gen.go"
 	outPath := filepath.Join(outDir, outFile)
 
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		log.Fatalf("mkdir %s: %v", filepath.Dir(outPath), err)
+	}
+
 	if err := os.WriteFile(outPath, src, 0o644); err != nil { //nolint:gosec // generated code should be world-readable
 		log.Fatalf("write %s: %v", outPath, err)
 	}
