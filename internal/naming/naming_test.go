@@ -18,6 +18,8 @@ func TestSnakeToCamel(t *testing.T) {
 		{"created_at", "CreatedAt"},
 		{"user_id", "UserID"},
 		{"http_server", "HTTPServer"},
+		{"oauth_token", "OAuthToken"},
+		{"user_oauth_accounts", "UserOAuthAccounts"},
 		{"", ""},
 	}
 
@@ -45,6 +47,8 @@ func TestCamelToSnake(t *testing.T) {
 		{"CreatedAt", "created_at"},
 		{"UserID", "user_id"},
 		{"HTTPServer", "http_server"},
+		{"OAuth", "oauth"},
+		{"UserOAuthAccount", "user_oauth_account"},
 		{"userProfile", "user_profile"},
 		{"A", "a"},
 		{"", ""},

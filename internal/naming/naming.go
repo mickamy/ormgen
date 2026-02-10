@@ -5,16 +5,17 @@ import (
 	"unicode"
 )
 
-// commonAcronyms are words that should be fully uppercased in CamelCase.
-var commonAcronyms = map[string]bool{
-	"id": true, "url": true, "api": true, "http": true,
-	"json": true, "xml": true, "sql": true, "html": true,
-	"ip": true, "tcp": true, "udp": true, "uuid": true,
+// commonInitialisms maps lowercase words to their Go-idiomatic CamelCase form.
+var commonInitialisms = map[string]string{
+	"id": "ID", "url": "URL", "api": "API", "http": "HTTP",
+	"json": "JSON", "xml": "XML", "sql": "SQL", "html": "HTML",
+	"ip": "IP", "tcp": "TCP", "udp": "UDP", "uuid": "UUID",
+	"oauth": "OAuth",
 }
 
 // SnakeToCamel converts a snake_case string to CamelCase.
-// Common acronyms are fully uppercased:
-// "user_id" → "UserID", "created_at" → "CreatedAt", "id" → "ID".
+// Common initialisms use their Go-idiomatic form:
+// "user_id" → "UserID", "oauth_token" → "OAuthToken".
 func SnakeToCamel(s string) string {
 	parts := strings.Split(s, "_")
 	var b strings.Builder
@@ -22,8 +23,8 @@ func SnakeToCamel(s string) string {
 		if p == "" {
 			continue
 		}
-		if commonAcronyms[p] {
-			b.WriteString(strings.ToUpper(p))
+		if rep, ok := commonInitialisms[p]; ok {
+			b.WriteString(rep)
 		} else {
 			b.WriteString(strings.ToUpper(p[:1]) + p[1:])
 		}
@@ -33,8 +34,16 @@ func SnakeToCamel(s string) string {
 
 // CamelToSnake converts a CamelCase string to snake_case.
 // Consecutive uppercase letters (acronyms) are kept together:
-// "ID" → "id", "UserID" → "user_id", "CreatedAt" → "created_at".
+// "ID" → "id", "UserID" → "user_id", "OAuth" → "oauth".
 func CamelToSnake(s string) string {
+	// Normalize mixed-case initialisms (e.g. "OAuth" → "Oauth")
+	// so the algorithm treats them as single words.
+	for _, rep := range commonInitialisms {
+		if rep != strings.ToUpper(rep) {
+			s = strings.ReplaceAll(s, rep, strings.ToUpper(rep[:1])+strings.ToLower(rep[1:]))
+		}
+	}
+
 	runes := []rune(s)
 	var b strings.Builder
 	for i, r := range runes {
