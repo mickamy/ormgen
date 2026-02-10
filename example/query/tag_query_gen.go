@@ -11,7 +11,7 @@ import (
 // Tags returns a new Query for the tags table.
 func Tags(db orm.Querier) *orm.Query[model.Tag] {
 	return orm.NewQuery[model.Tag](
-		db, "tags", tagsColumns, "id",
+		db, orm.ResolveTableName[model.Tag]("tags"), tagsColumns, "id",
 		scanTag, tagColumnValuePairs, setTagPK,
 	)
 }

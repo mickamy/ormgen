@@ -178,14 +178,14 @@ import (
 func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 	{{- if .Relations}}
 	q := orm.NewQuery[{{.TypeName}}](
-		db, "{{.TableName}}", {{.ColumnsVar}}, "{{.PK.Column}}",
+		db, orm.ResolveTableName[{{.TypeName}}]("{{.TableName}}"), {{.ColumnsVar}}, "{{.PK.Column}}",
 		{{.ScanFunc}}, {{.ColValFunc}}, {{if .IsIntPK}}{{.SetPKFunc}}{{else}}nil{{end}},
 	)
 	{{- range .Relations}}
 	{{- if ne .RelType "many_to_many"}}
 	q.RegisterJoin("{{.FieldName}}", orm.JoinConfig{
-		TargetTable: "{{.JoinTargetTable}}", TargetColumn: "{{.JoinTargetColumn}}",
-		SourceTable: "{{.JoinSourceTable}}", SourceColumn: "{{.JoinSourceColumn}}",
+		TargetTable: orm.ResolveTableName[{{.TargetType}}]("{{.JoinTargetTable}}"), TargetColumn: "{{.JoinTargetColumn}}",
+		SourceTable: orm.ResolveTableName[{{.ParentType}}]("{{.JoinSourceTable}}"), SourceColumn: "{{.JoinSourceColumn}}",
 	})
 	{{- end}}
 	q.RegisterPreloader("{{.FieldName}}", {{.PreloaderName}})
@@ -193,7 +193,7 @@ func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 	return q
 	{{- else}}
 	return orm.NewQuery[{{.TypeName}}](
-		db, "{{.TableName}}", {{.ColumnsVar}}, "{{.PK.Column}}",
+		db, orm.ResolveTableName[{{.TypeName}}]("{{.TableName}}"), {{.ColumnsVar}}, "{{.PK.Column}}",
 		{{.ScanFunc}}, {{.ColValFunc}}, {{if .IsIntPK}}{{.SetPKFunc}}{{else}}nil{{end}},
 	)
 	{{- end}}

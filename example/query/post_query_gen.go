@@ -13,12 +13,12 @@ import (
 // Posts returns a new Query for the posts table.
 func Posts(db orm.Querier) *orm.Query[model.Post] {
 	q := orm.NewQuery[model.Post](
-		db, "posts", postsColumns, "id",
+		db, orm.ResolveTableName[model.Post]("posts"), postsColumns, "id",
 		scanPost, postColumnValuePairs, setPostPK,
 	)
 	q.RegisterJoin("User", orm.JoinConfig{
-		TargetTable: "users", TargetColumn: "id",
-		SourceTable: "posts", SourceColumn: "user_id",
+		TargetTable: orm.ResolveTableName[model.User]("users"), TargetColumn: "id",
+		SourceTable: orm.ResolveTableName[model.Post]("posts"), SourceColumn: "user_id",
 	})
 	q.RegisterPreloader("User", preloadPostUser)
 	return q

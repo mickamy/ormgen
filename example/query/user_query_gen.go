@@ -13,17 +13,17 @@ import (
 // Users returns a new Query for the users table.
 func Users(db orm.Querier) *orm.Query[model.User] {
 	q := orm.NewQuery[model.User](
-		db, "users", usersColumns, "id",
+		db, orm.ResolveTableName[model.User]("users"), usersColumns, "id",
 		scanUser, userColumnValuePairs, setUserPK,
 	)
 	q.RegisterJoin("Posts", orm.JoinConfig{
-		TargetTable: "posts", TargetColumn: "user_id",
-		SourceTable: "users", SourceColumn: "id",
+		TargetTable: orm.ResolveTableName[model.Post]("posts"), TargetColumn: "user_id",
+		SourceTable: orm.ResolveTableName[model.User]("users"), SourceColumn: "id",
 	})
 	q.RegisterPreloader("Posts", preloadUserPosts)
 	q.RegisterJoin("Profile", orm.JoinConfig{
-		TargetTable: "profiles", TargetColumn: "user_id",
-		SourceTable: "users", SourceColumn: "id",
+		TargetTable: orm.ResolveTableName[model.Profile]("profiles"), TargetColumn: "user_id",
+		SourceTable: orm.ResolveTableName[model.User]("users"), SourceColumn: "id",
 	})
 	q.RegisterPreloader("Profile", preloadUserProfile)
 	q.RegisterPreloader("Tags", preloadUserTags)

@@ -11,7 +11,7 @@ import (
 // Profiles returns a new Query for the profiles table.
 func Profiles(db orm.Querier) *orm.Query[model.Profile] {
 	return orm.NewQuery[model.Profile](
-		db, "profiles", profilesColumns, "id",
+		db, orm.ResolveTableName[model.Profile]("profiles"), profilesColumns, "id",
 		scanProfile, profileColumnValuePairs, setProfilePK,
 	)
 }
