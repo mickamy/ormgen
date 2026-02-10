@@ -3,7 +3,6 @@ package orm
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 )
 
 // Querier is the common interface for DB and Tx.
@@ -14,11 +13,16 @@ type Querier interface {
 	dialect() Dialect
 }
 
+// Logger is the interface for query logging.
+type Logger interface {
+	Log(ctx context.Context, query string, args ...any)
+}
+
 // DB wraps *sql.DB with a Dialect and satisfies Querier.
 type DB struct {
-	raw   *sql.DB
-	d     Dialect
-	debug bool
+	raw    *sql.DB
+	d      Dialect
+	logger Logger
 }
 
 // New wraps a *sql.DB with the given Dialect.
@@ -26,22 +30,22 @@ func New(db *sql.DB, d Dialect) *DB {
 	return &DB{raw: db, d: d}
 }
 
-// Debug returns a new *DB that logs every query via slog.DebugContext.
+// Debug returns a new *DB that logs every query using the given Logger.
 // The original DB is not modified.
-func (db *DB) Debug() *DB {
-	return &DB{raw: db.raw, d: db.d, debug: true}
+func (db *DB) Debug(l Logger) *DB {
+	return &DB{raw: db.raw, d: db.d, logger: l}
 }
 
 func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if db.debug {
-		slog.DebugContext(ctx, "ormgen", "query", query, "args", args)
+	if db.logger != nil {
+		db.logger.Log(ctx, query, args...)
 	}
 	return db.raw.QueryContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	if db.debug {
-		slog.DebugContext(ctx, "ormgen", "query", query, "args", args)
+	if db.logger != nil {
+		db.logger.Log(ctx, query, args...)
 	}
 	return db.raw.ExecContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
@@ -52,7 +56,7 @@ func (db *DB) Begin(ctx context.Context) (*Tx, error) {
 	if err != nil {
 		return nil, err //nolint:wrapcheck // thin wrapper
 	}
-	return &Tx{raw: tx, d: db.d, debug: db.debug}, nil
+	return &Tx{raw: tx, d: db.d, logger: db.logger}, nil
 }
 
 // Transaction executes fn within a transaction.
@@ -86,21 +90,21 @@ func (db *DB) dialect() Dialect { return db.d }
 
 // Tx wraps *sql.Tx with a Dialect and satisfies Querier.
 type Tx struct {
-	raw   *sql.Tx
-	d     Dialect
-	debug bool
+	raw    *sql.Tx
+	d      Dialect
+	logger Logger
 }
 
 func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if tx.debug {
-		slog.DebugContext(ctx, "ormgen", "query", query, "args", args)
+	if tx.logger != nil {
+		tx.logger.Log(ctx, query, args...)
 	}
 	return tx.raw.QueryContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
 
 func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	if tx.debug {
-		slog.DebugContext(ctx, "ormgen", "query", query, "args", args)
+	if tx.logger != nil {
+		tx.logger.Log(ctx, query, args...)
 	}
 	return tx.raw.ExecContext(ctx, query, args...) //nolint:wrapcheck // thin wrapper
 }
