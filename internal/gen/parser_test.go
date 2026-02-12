@@ -439,7 +439,7 @@ func TestParseCrossPackageRelations(t *testing.T) {
 		t.Errorf("Relations[0].TargetImportPath = %q, want %q", rel0.TargetImportPath, "github.com/example/auth/model")
 	}
 
-	// Same-package relation: *UserEmail
+	// Same-package relation: UserEmail (non-pointer)
 	rel1 := info.Relations[1]
 	if rel1.TargetType != "UserEmail" {
 		t.Errorf("Relations[1].TargetType = %q, want %q", rel1.TargetType, "UserEmail")

@@ -161,6 +161,7 @@ type relationTemplateData struct {
 	ForeignKey       string // "user_id"
 	ForeignKeyField  string // "UserID"
 	RelType          string // "has_many", "belongs_to", "has_one", or "many_to_many"
+	IsPointer        bool   // true if the source field is a pointer (e.g. *UserEmail)
 	PreloaderName    string // "preloadUserPosts"
 	KeyType          string // Go type for map key ("int")
 	ParentPKField    string // "ID"
@@ -357,10 +358,17 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	if err != nil {
 		return err
 	}
+	{{- if .IsPointer}}
 	byFK := make(map[{{.KeyType}}]*{{.TargetType}})
 	for i := range related {
 		byFK[related[i].{{.ForeignKeyField}}] = &related[i]
 	}
+	{{- else}}
+	byFK := make(map[{{.KeyType}}]{{.TargetType}})
+	for _, r := range related {
+		byFK[r.{{.ForeignKeyField}}] = r
+	}
+	{{- end}}
 	for i := range results {
 		results[i].{{.FieldName}} = byFK[results[i].{{.ParentPKField}}]
 	}
@@ -488,6 +496,7 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 			ForeignKey:      rel.ForeignKey,
 			ForeignKeyField: fkField,
 			RelType:         rel.RelType,
+			IsPointer:       rel.IsPointer,
 			PreloaderName:   unexportedName("preload" + info.Name + rel.FieldName),
 			ParentPKField:   pk.Name,
 		}

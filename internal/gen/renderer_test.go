@@ -379,11 +379,18 @@ func TestRenderCrossPackageRelations(t *testing.T) {
 		"UserEmails(db)",
 		// Source import is present
 		`"github.com/example/user/model"`,
+		// Non-pointer has_one: value-type map (no pointer)
+		"byFK := make(map[int]model.UserEmail)",
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
 			t.Errorf("missing %q in generated code:\n%s", want, code)
 		}
+	}
+
+	// Non-pointer has_one should NOT use pointer map
+	if strings.Contains(code, "map[int]*model.UserEmail") {
+		t.Errorf("unexpected pointer map for non-pointer has_one in generated code:\n%s", code)
 	}
 
 	// Bare "model.OAuthAccount" (without "auth" prefix) should NOT appear.
