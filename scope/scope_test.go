@@ -8,11 +8,14 @@ import (
 
 // mockApplier records calls from Scope.Apply for assertions.
 type mockApplier struct {
-	wheres   []appliedWhere
-	orderBys []string
-	selects  []string
-	limit    *int
-	offset   *int
+	wheres    []appliedWhere
+	orderBys  []string
+	selects   []string
+	joins     []string
+	leftJoins []string
+	preloads  []string
+	limit     *int
+	offset    *int
 }
 
 type appliedWhere struct {
@@ -27,6 +30,9 @@ func (m *mockApplier) ApplyOrderBy(clause string) { m.orderBys = append(m.orderB
 func (m *mockApplier) ApplyLimit(n int)           { m.limit = &n }
 func (m *mockApplier) ApplyOffset(n int)          { m.offset = &n }
 func (m *mockApplier) ApplySelect(columns string) { m.selects = append(m.selects, columns) }
+func (m *mockApplier) ApplyJoin(name string)      { m.joins = append(m.joins, name) }
+func (m *mockApplier) ApplyLeftJoin(name string)   { m.leftJoins = append(m.leftJoins, name) }
+func (m *mockApplier) ApplyPreload(name string)    { m.preloads = append(m.preloads, name) }
 
 func TestWhere(t *testing.T) {
 	t.Parallel()
@@ -211,6 +217,39 @@ func TestCombine(t *testing.T) {
 	s := scope.Combine(scope.Limit(5), scope.Offset(10))
 	if len(s) != 2 {
 		t.Errorf("len = %d, want 2", len(s))
+	}
+}
+
+func TestJoin(t *testing.T) {
+	t.Parallel()
+
+	m := &mockApplier{}
+	scope.Join("Posts").Apply(m)
+
+	if len(m.joins) != 1 || m.joins[0] != "Posts" {
+		t.Errorf("joins = %v, want [Posts]", m.joins)
+	}
+}
+
+func TestLeftJoin(t *testing.T) {
+	t.Parallel()
+
+	m := &mockApplier{}
+	scope.LeftJoin("Posts").Apply(m)
+
+	if len(m.leftJoins) != 1 || m.leftJoins[0] != "Posts" {
+		t.Errorf("leftJoins = %v, want [Posts]", m.leftJoins)
+	}
+}
+
+func TestPreload(t *testing.T) {
+	t.Parallel()
+
+	m := &mockApplier{}
+	scope.Preload("Posts").Apply(m)
+
+	if len(m.preloads) != 1 || m.preloads[0] != "Posts" {
+		t.Errorf("preloads = %v, want [Posts]", m.preloads)
 	}
 }
 

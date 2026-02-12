@@ -1,6 +1,7 @@
 package orm_test
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -492,5 +493,75 @@ func TestUpdateOnlySetsUpdatedAt(t *testing.T) {
 	}
 	if a.UpdatedAt != fixed {
 		t.Errorf("UpdatedAt = %v, want %v", a.UpdatedAt, fixed)
+	}
+}
+
+// --- scope.Join / scope.LeftJoin / scope.Preload via Scopes ---
+
+func TestBuildSelectWithScopeJoin(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+	q.RegisterJoin("Posts", orm.JoinConfig{
+		TargetTable:  "posts",
+		TargetColumn: "user_id",
+		SourceTable:  "users",
+		SourceColumn: "id",
+	})
+
+	_, _ = q.Scopes(scope.Join("Posts")).All(t.Context())
+
+	got := tq.LastQuery()
+	if !strings.Contains(got.SQL, "INNER JOIN") {
+		t.Errorf("SQL should contain INNER JOIN: %q", got.SQL)
+	}
+	want := "SELECT `id`, `name` FROM `users` INNER JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectWithScopeLeftJoin(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+	q.RegisterJoin("Posts", orm.JoinConfig{
+		TargetTable:  "posts",
+		TargetColumn: "user_id",
+		SourceTable:  "users",
+		SourceColumn: "id",
+	})
+
+	_, _ = q.Scopes(scope.LeftJoin("Posts")).All(t.Context())
+
+	got := tq.LastQuery()
+	if !strings.Contains(got.SQL, "LEFT JOIN") {
+		t.Errorf("SQL should contain LEFT JOIN: %q", got.SQL)
+	}
+	want := "SELECT `id`, `name` FROM `users` LEFT JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectWithScopePreload(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+	q.RegisterPreloader("Posts", func(_ context.Context, _ orm.Querier, _ []testUser) error {
+		return nil
+	})
+
+	// Scopes(scope.Preload("Posts")) should not affect the generated SQL;
+	// preloads are executed after the main query.
+	_, _ = q.Scopes(scope.Preload("Posts")).All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `id`, `name` FROM `users`"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q (preload should not alter SQL)", got.SQL, want)
 	}
 }

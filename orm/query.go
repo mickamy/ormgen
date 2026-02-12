@@ -177,9 +177,15 @@ func (q *Query[T]) LeftJoin(name string) *Query[T] {
 }
 
 func (q *Query[T]) addJoin(joinType, name string) *Query[T] {
+	q2 := q.clone()
+	q2.applyJoin(joinType, name)
+	return q2
+}
+
+func (q *Query[T]) applyJoin(joinType, name string) {
 	cfg, ok := q.joinDefs[name]
 	if !ok {
-		return q
+		return
 	}
 	clause := fmt.Sprintf(
 		"%s %s ON %s.%s = %s.%s",
@@ -188,9 +194,7 @@ func (q *Query[T]) addJoin(joinType, name string) *Query[T] {
 		q.qi(cfg.TargetTable), q.qi(cfg.TargetColumn),
 		q.qi(cfg.SourceTable), q.qi(cfg.SourceColumn),
 	)
-	q2 := q.clone()
-	q2.joins = append(q2.joins, clause)
-	return q2
+	q.joins = append(q.joins, clause)
 }
 
 // Preload registers a relation to be eagerly loaded after the main query.
@@ -225,6 +229,10 @@ func (q *Query[T]) ApplyOffset(n int) { q.offset = &n }
 func (q *Query[T]) ApplySelect(columns string) {
 	q.selects = &columns
 }
+
+func (q *Query[T]) ApplyJoin(name string)     { q.applyJoin("INNER JOIN", name) }
+func (q *Query[T]) ApplyLeftJoin(name string)  { q.applyJoin("LEFT JOIN", name) }
+func (q *Query[T]) ApplyPreload(name string)   { q.preloads = append(q.preloads, name) }
 
 var _ scope.Applier = (*Query[any])(nil)
 

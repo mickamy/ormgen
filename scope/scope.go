@@ -11,6 +11,9 @@ type Applier interface {
 	ApplyLimit(n int)
 	ApplyOffset(n int)
 	ApplySelect(columns string)
+	ApplyJoin(name string)
+	ApplyLeftJoin(name string)
+	ApplyPreload(name string)
 }
 
 type scopeKind int
@@ -21,6 +24,9 @@ const (
 	kindLimit
 	kindOffset
 	kindSelect
+	kindJoin
+	kindLeftJoin
+	kindPreload
 )
 
 // Scope represents a single query condition fragment.
@@ -45,6 +51,12 @@ func (s Scope) Apply(a Applier) {
 		a.ApplyOffset(s.n)
 	case kindSelect:
 		a.ApplySelect(s.clause)
+	case kindJoin:
+		a.ApplyJoin(s.clause)
+	case kindLeftJoin:
+		a.ApplyLeftJoin(s.clause)
+	case kindPreload:
+		a.ApplyPreload(s.clause)
 	}
 }
 
@@ -78,6 +90,21 @@ func Offset(n int) Scope {
 //	scope.Select("id", "name")
 func Select(columns ...string) Scope {
 	return Scope{kind: kindSelect, clause: strings.Join(columns, ", ")}
+}
+
+// Join returns a Scope that adds an INNER JOIN for the named relation.
+func Join(name string) Scope {
+	return Scope{kind: kindJoin, clause: name}
+}
+
+// LeftJoin returns a Scope that adds a LEFT JOIN for the named relation.
+func LeftJoin(name string) Scope {
+	return Scope{kind: kindLeftJoin, clause: name}
+}
+
+// Preload returns a Scope that registers a relation for eager loading.
+func Preload(name string) Scope {
+	return Scope{kind: kindPreload, clause: name}
 }
 
 // In returns a WHERE scope with an IN clause, expanding the slice into
