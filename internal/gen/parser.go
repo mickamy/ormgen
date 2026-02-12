@@ -248,31 +248,51 @@ func typeToString(expr ast.Expr) string {
 }
 
 // isCompositeType returns true for types that are likely relation fields
-// (not DB columns). Only same-package exported types (e.g. User, Post)
-// are treated as model structs. External package types (e.g. time.Time)
-// and builtin types (e.g. string) are treated as columns.
+// (not DB columns).
+//
+// Heuristics:
+//   - []T: relation if T is any struct type (same-package or external).
+//     []string, []byte etc. are columns.
+//   - *T: relation only if T is a same-package exported type.
+//     *time.Time, *sql.NullString etc. are columns.
+//   - T (bare ident): relation if exported same-package type.
 func isCompositeType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.ArrayType:
-		// []User → relation, []string → column
-		return isModelType(t.Elt)
+		// []User, []pkg.Model → relation; []string, []byte → column
+		return isStructType(t.Elt)
 	case *ast.Ident:
 		return t.IsExported()
 	case *ast.StarExpr:
-		// *User → relation, *time.Time → column
-		return isModelType(t.X)
+		// *User → relation; *time.Time → column
+		return isSamePackageModel(t.X)
 	}
 	return false
 }
 
-// isModelType returns true if expr refers to a same-package exported type
-// (likely a model struct). External package types (pkg.Type) return false.
-func isModelType(expr ast.Expr) bool {
+// isStructType returns true if expr refers to any struct-like type,
+// including external package types (e.g. amodel.OAuthAccount).
+// Used for slice elements where []pkg.Model is a relation.
+func isStructType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.Ident:
 		return t.IsExported()
 	case *ast.StarExpr:
-		return isModelType(t.X)
+		return isStructType(t.X)
+	case *ast.SelectorExpr:
+		return true // pkg.Type
+	}
+	return false
+}
+
+// isSamePackageModel returns true only for same-package exported types.
+// Used for pointer fields where *time.Time is a column, not a relation.
+func isSamePackageModel(expr ast.Expr) bool {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.IsExported()
+	case *ast.StarExpr:
+		return isSamePackageModel(t.X)
 	}
 	return false
 }
