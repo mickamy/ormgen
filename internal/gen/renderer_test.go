@@ -365,12 +365,18 @@ func TestRenderCrossPackageRelations(t *testing.T) {
 	}
 
 	checks := []string{
-		// External import with alias (auth/model conflicts with user/model)
+		// External model import with alias (auth/model conflicts with user/model)
 		`authmodel "github.com/example/auth/model"`,
+		// External query import with alias (auth/query conflicts with user/query)
+		`authquery "github.com/example/auth/query"`,
 		// Cross-package type uses resolved alias
 		"authmodel.OAuthAccount",
+		// Cross-package factory uses external query package
+		"authquery.OAuthAccounts(db)",
 		// Same-package type uses source import prefix
 		"model.UserEmail",
+		// Same-package factory is local (no prefix)
+		"UserEmails(db)",
 		// Source import is present
 		`"github.com/example/user/model"`,
 	}
@@ -381,9 +387,14 @@ func TestRenderCrossPackageRelations(t *testing.T) {
 	}
 
 	// Bare "model.OAuthAccount" (without "auth" prefix) should NOT appear.
-	// Replace all correct occurrences, then check no bare ones remain.
 	stripped := strings.ReplaceAll(code, "authmodel.OAuthAccount", "")
 	if strings.Contains(stripped, "model.OAuthAccount") {
 		t.Errorf("unexpected bare %q in generated code:\n%s", "model.OAuthAccount", code)
+	}
+
+	// Bare "OAuthAccounts(db)" (without "authquery." prefix) should NOT appear.
+	stripped2 := strings.ReplaceAll(code, "authquery.OAuthAccounts(db)", "")
+	if strings.Contains(stripped2, "OAuthAccounts(db)") {
+		t.Errorf("unexpected bare %q in generated code:\n%s", "OAuthAccounts(db)", code)
 	}
 }

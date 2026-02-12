@@ -59,7 +59,7 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		updatedAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.UpdatedAt })
 		hasTimestamps := len(createdAtFields) > 0 || len(updatedAtFields) > 0
 
-		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport)
+		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport, opt.DestPkg)
 		for _, ei := range extraImports {
 			if !seenImports[ei.Path] {
 				seenImports[ei.Path] = true
@@ -429,7 +429,7 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 {{- end}}
 {{end}}`
 
-func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport string) ([]relationTemplateData, []importEntry) {
+func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport, destPkg string) ([]relationTemplateData, []importEntry) {
 	if len(info.Relations) == 0 {
 		return nil, nil
 	}
@@ -445,7 +445,8 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 
 		// Determine type prefix for the target type.
 		targetTypePrefix := typePrefix
-		if rel.TargetImportPath != "" && rel.TargetImportPath != sourceImport {
+		isCrossPkg := rel.TargetImportPath != "" && rel.TargetImportPath != sourceImport
+		if isCrossPkg {
 			alias := resolveAlias(rel.TargetImportPath, sourceImport)
 			targetTypePrefix = alias + "."
 			if !seen[rel.TargetImportPath] {
@@ -457,6 +458,25 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 					entry.Alias = alias
 				}
 				extraImports = append(extraImports, entry)
+			}
+		}
+
+		// For cross-package relations with a separate dest package, the target
+		// factory lives in the external query package, not the current one.
+		if isCrossPkg && destPkg != "" && sourceImport != "" {
+			extQueryImport := replaceLastSegment(rel.TargetImportPath, destPkg)
+			destQueryImport := replaceLastSegment(sourceImport, destPkg)
+			if extQueryImport != destQueryImport {
+				queryAlias := resolveAlias(extQueryImport, destQueryImport)
+				targetFactory = queryAlias + "." + targetFactory
+				if !seen[extQueryImport] {
+					seen[extQueryImport] = true
+					entry := importEntry{Path: extQueryImport}
+					if queryAlias != destPkg {
+						entry.Alias = queryAlias
+					}
+					extraImports = append(extraImports, entry)
+				}
 			}
 		}
 
@@ -521,6 +541,16 @@ func resolveAlias(importPath, sourceImport string) string {
 		return parts[len(parts)-2] + lastSeg
 	}
 	return lastSeg
+}
+
+// replaceLastSegment replaces the last path segment of an import path.
+// e.g. replaceLastSegment("github.com/foo/model", "query") → "github.com/foo/query"
+func replaceLastSegment(importPath, newSeg string) string {
+	i := strings.LastIndex(importPath, "/")
+	if i < 0 {
+		return newSeg
+	}
+	return importPath[:i+1] + newSeg
 }
 
 func lookupFieldType(info *StructInfo, column string) string {
