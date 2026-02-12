@@ -413,6 +413,56 @@ func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with m
 	})
 }
 
+func TestParseCrossPackageRelations(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("cross_pkg_relations.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	info := findStructInInfos(t, infos, "EndUser")
+
+	if len(info.Relations) != 2 {
+		t.Fatalf("len(Relations) = %d, want 2", len(info.Relations))
+	}
+
+	// Cross-package relation: []amodel.OAuthAccount
+	rel0 := info.Relations[0]
+	if rel0.TargetType != "OAuthAccount" {
+		t.Errorf("Relations[0].TargetType = %q, want %q", rel0.TargetType, "OAuthAccount")
+	}
+	if rel0.TargetPkgAlias != "amodel" {
+		t.Errorf("Relations[0].TargetPkgAlias = %q, want %q", rel0.TargetPkgAlias, "amodel")
+	}
+	if rel0.TargetImportPath != "github.com/example/auth/model" {
+		t.Errorf("Relations[0].TargetImportPath = %q, want %q", rel0.TargetImportPath, "github.com/example/auth/model")
+	}
+
+	// Same-package relation: *UserEmail
+	rel1 := info.Relations[1]
+	if rel1.TargetType != "UserEmail" {
+		t.Errorf("Relations[1].TargetType = %q, want %q", rel1.TargetType, "UserEmail")
+	}
+	if rel1.TargetPkgAlias != "" {
+		t.Errorf("Relations[1].TargetPkgAlias = %q, want empty", rel1.TargetPkgAlias)
+	}
+	if rel1.TargetImportPath != "" {
+		t.Errorf("Relations[1].TargetImportPath = %q, want empty", rel1.TargetImportPath)
+	}
+}
+
+func findStructInInfos(t *testing.T, infos []*gen.StructInfo, name string) *gen.StructInfo {
+	t.Helper()
+	for _, info := range infos {
+		if info.Name == name {
+			return info
+		}
+	}
+	t.Fatalf("struct %q not found", name)
+	return nil
+}
+
 func TestParseInvalidFile(t *testing.T) {
 	t.Parallel()
 

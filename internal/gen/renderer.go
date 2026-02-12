@@ -46,6 +46,9 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 	}
 
 	structs := make([]templateData, 0, len(infos))
+	var allExtraImports []importEntry
+	seenImports := make(map[string]bool)
+
 	for _, info := range infos {
 		pk, err := info.PrimaryKeyField()
 		if err != nil {
@@ -55,6 +58,14 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		createdAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.CreatedAt })
 		updatedAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.UpdatedAt })
 		hasTimestamps := len(createdAtFields) > 0 || len(updatedAtFields) > 0
+
+		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport)
+		for _, ei := range extraImports {
+			if !seenImports[ei.Path] {
+				seenImports[ei.Path] = true
+				allExtraImports = append(allExtraImports, ei)
+			}
+		}
 
 		data := templateData{
 			TypeName:         typePrefix + info.Name,
@@ -67,7 +78,7 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 			SetPKFunc:        unexportedName("set" + info.Name + "PK"),
 			ColumnsVar:       unexportedName(naming.SnakeToCamel(info.TableName) + "Columns"),
 			IsIntPK:          isIntType(pk.GoType),
-			Relations:        buildRelationData(info, pk, typePrefix),
+			Relations:        relations,
 			SetCreatedAtFunc: unexportedName("set" + info.Name + "CreatedAt"),
 			SetUpdatedAtFunc: unexportedName("set" + info.Name + "UpdatedAt"),
 			CreatedAtFields:  createdAtFields,
@@ -93,6 +104,7 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		SourceImport:  opt.SourceImport,
 		HasRelations:  hasRelations,
 		HasTimestamps: fileHasTimestamps,
+		ExtraImports:  allExtraImports,
 		Structs:       structs,
 	}
 
@@ -108,11 +120,17 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 	return src, nil
 }
 
+type importEntry struct {
+	Alias string // empty means the last path segment is used as-is
+	Path  string
+}
+
 type fileTemplateData struct {
 	Package       string
 	SourceImport  string
 	HasRelations  bool
 	HasTimestamps bool
+	ExtraImports  []importEntry
 	Structs       []templateData
 }
 
@@ -202,6 +220,13 @@ import (
 	{{- end}}
 	{{- if .SourceImport}}
 	"{{.SourceImport}}"
+	{{- end}}
+	{{- range .ExtraImports}}
+	{{- if .Alias}}
+	{{.Alias}} "{{.Path}}"
+	{{- else}}
+	"{{.Path}}"
+	{{- end}}
 	{{- end}}
 )
 {{range .Structs}}
@@ -404,21 +429,41 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 {{- end}}
 {{end}}`
 
-func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix string) []relationTemplateData {
+func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport string) ([]relationTemplateData, []importEntry) {
 	if len(info.Relations) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	rels := make([]relationTemplateData, 0, len(info.Relations))
+	seen := make(map[string]bool)
+	var extraImports []importEntry
+
 	for _, rel := range info.Relations {
 		targetTable := inflection.Plural(naming.CamelToSnake(rel.TargetType))
 		targetFactory := naming.SnakeToCamel(targetTable)
 		fkField := naming.SnakeToCamel(rel.ForeignKey)
 
+		// Determine type prefix for the target type.
+		targetTypePrefix := typePrefix
+		if rel.TargetImportPath != "" && rel.TargetImportPath != sourceImport {
+			alias := resolveAlias(rel.TargetImportPath, sourceImport)
+			targetTypePrefix = alias + "."
+			if !seen[rel.TargetImportPath] {
+				seen[rel.TargetImportPath] = true
+				parts := strings.Split(rel.TargetImportPath, "/")
+				lastSeg := parts[len(parts)-1]
+				entry := importEntry{Path: rel.TargetImportPath}
+				if alias != lastSeg {
+					entry.Alias = alias
+				}
+				extraImports = append(extraImports, entry)
+			}
+		}
+
 		rd := relationTemplateData{
 			FieldName:       rel.FieldName,
 			ParentType:      typePrefix + info.Name,
-			TargetType:      typePrefix + rel.TargetType,
+			TargetType:      targetTypePrefix + rel.TargetType,
 			TargetFactory:   targetFactory,
 			ForeignKey:      rel.ForeignKey,
 			ForeignKeyField: fkField,
@@ -450,7 +495,32 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix string) []rel
 
 		rels = append(rels, rd)
 	}
-	return rels
+	return rels, extraImports
+}
+
+// resolveAlias determines the import alias for an external package.
+// If the last path segment conflicts with the source import's last segment,
+// it prepends the previous segment to disambiguate.
+func resolveAlias(importPath, sourceImport string) string {
+	parts := strings.Split(importPath, "/")
+	lastSeg := parts[len(parts)-1]
+
+	if sourceImport == "" {
+		return lastSeg
+	}
+
+	srcParts := strings.Split(sourceImport, "/")
+	srcLastSeg := srcParts[len(srcParts)-1]
+
+	if lastSeg != srcLastSeg {
+		return lastSeg
+	}
+
+	// Conflict: e.g. both end in "model". Use previous segment + last segment.
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + lastSeg
+	}
+	return lastSeg
 }
 
 func lookupFieldType(info *StructInfo, column string) string {

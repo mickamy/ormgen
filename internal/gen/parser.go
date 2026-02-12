@@ -23,14 +23,16 @@ type FieldInfo struct {
 
 // RelationInfo holds parsed metadata for a relation field.
 type RelationInfo struct {
-	FieldName  string // Go field name, e.g. "Posts" or "User"
-	TargetType string // Target struct name, e.g. "Post" or "User"
-	RelType    string // "has_many", "belongs_to", "has_one", or "many_to_many"
-	ForeignKey string // FK column name, e.g. "user_id"
-	IsSlice    bool   // true for has_many / many_to_many ([]Post)
-	IsPointer  bool   // true for belongs_to / has_one (*User)
-	JoinTable  string // many_to_many only: join table name, e.g. "user_tags"
-	References string // many_to_many only: target FK in join table, e.g. "tag_id"
+	FieldName        string // Go field name, e.g. "Posts" or "User"
+	TargetType       string // Target struct name, e.g. "Post" or "User"
+	TargetPkgAlias   string // Source file import alias (e.g. "amodel"). Empty for same-package types.
+	TargetImportPath string // Full import path (e.g. "github.com/.../auth/model"). Empty for same-package types.
+	RelType          string // "has_many", "belongs_to", "has_one", or "many_to_many"
+	ForeignKey       string // FK column name, e.g. "user_id"
+	IsSlice          bool   // true for has_many / many_to_many ([]Post)
+	IsPointer        bool   // true for belongs_to / has_one (*User)
+	JoinTable        string // many_to_many only: join table name, e.g. "user_tags"
+	References       string // many_to_many only: target FK in join table, e.g. "tag_id"
 }
 
 // StructInfo holds parsed metadata for the target struct.
@@ -70,6 +72,7 @@ func Parse(filePath string) ([]*StructInfo, error) {
 	}
 
 	pkg := file.Name.Name
+	importMap := buildImportMap(file)
 	var infos []*StructInfo
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -84,7 +87,7 @@ func Parse(filePath string) ([]*StructInfo, error) {
 		}
 
 		fields := parseStructFields(st)
-		relations := parseRelations(st)
+		relations := parseRelations(st, importMap)
 		if len(fields) == 0 {
 			return true
 		}
@@ -184,7 +187,7 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 }
 
 // parseRelations extracts rel-tagged fields from an AST struct type.
-func parseRelations(st *ast.StructType) []RelationInfo {
+func parseRelations(st *ast.StructType, importMap map[string]string) []RelationInfo {
 	rels := make([]RelationInfo, 0, len(st.Fields.List))
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 || field.Tag == nil {
@@ -218,7 +221,16 @@ func parseRelations(st *ast.StructType) []RelationInfo {
 		}
 
 		// Determine target type from field type.
-		ri.TargetType, ri.IsSlice, ri.IsPointer = extractTargetType(field.Type)
+		var pkgAlias string
+		ri.TargetType, pkgAlias, ri.IsSlice, ri.IsPointer = extractTargetType(field.Type)
+
+		// Resolve cross-package import info.
+		if pkgAlias != "" {
+			ri.TargetPkgAlias = pkgAlias
+			if path, ok := importMap[pkgAlias]; ok {
+				ri.TargetImportPath = path
+			}
+		}
 
 		if ri.RelType == "" || ri.ForeignKey == "" || ri.TargetType == "" {
 			continue
@@ -231,23 +243,44 @@ func parseRelations(st *ast.StructType) []RelationInfo {
 	return rels
 }
 
-// extractTargetType returns the base type name, and whether it's a slice or pointer.
-func extractTargetType(expr ast.Expr) (name string, isSlice, isPointer bool) {
+// extractTargetType returns the base type name, package alias (if cross-package),
+// and whether it's a slice or pointer.
+func extractTargetType(expr ast.Expr) (name, pkgAlias string, isSlice, isPointer bool) {
 	switch t := expr.(type) {
 	case *ast.ArrayType:
 		if t.Len == nil { // slice
-			name, _, _ = extractTargetType(t.Elt)
-			return name, true, false
+			name, pkgAlias, _, _ = extractTargetType(t.Elt)
+			return name, pkgAlias, true, false
 		}
 	case *ast.StarExpr:
-		name, _, _ = extractTargetType(t.X)
-		return name, false, true
+		name, pkgAlias, _, _ = extractTargetType(t.X)
+		return name, pkgAlias, false, true
 	case *ast.Ident:
-		return t.Name, false, false
+		return t.Name, "", false, false
 	case *ast.SelectorExpr:
-		return t.Sel.Name, false, false
+		if x, ok := t.X.(*ast.Ident); ok {
+			return t.Sel.Name, x.Name, false, false
+		}
+		return t.Sel.Name, "", false, false
 	}
-	return "", false, false
+	return "", "", false, false
+}
+
+// buildImportMap returns a map from import alias (or last path segment) to full import path.
+func buildImportMap(file *ast.File) map[string]string {
+	m := make(map[string]string, len(file.Imports))
+	for _, imp := range file.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		var alias string
+		if imp.Name != nil {
+			alias = imp.Name.Name
+		} else {
+			parts := strings.Split(path, "/")
+			alias = parts[len(parts)-1]
+		}
+		m[alias] = path
+	}
+	return m
 }
 
 func typeToString(expr ast.Expr) string {

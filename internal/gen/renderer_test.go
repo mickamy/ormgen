@@ -334,3 +334,56 @@ func TestRenderFileCrossPackage(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderCrossPackageRelations(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("cross_pkg_relations.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	findStruct(t, infos, "EndUser").TableName = "end_users"
+	findStruct(t, infos, "UserEmail").TableName = "user_emails"
+
+	opt := gen.RenderOption{
+		DestPkg:      "query",
+		SourceImport: "github.com/example/user/model",
+	}
+
+	src, err := gen.RenderFile(infos, opt)
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	// Verify it's valid Go
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "cross_pkg_gen.go", src, 0); err != nil {
+		t.Fatalf("generated code does not parse: %v\n%s", err, code)
+	}
+
+	checks := []string{
+		// External import with alias (auth/model conflicts with user/model)
+		`authmodel "github.com/example/auth/model"`,
+		// Cross-package type uses resolved alias
+		"authmodel.OAuthAccount",
+		// Same-package type uses source import prefix
+		"model.UserEmail",
+		// Source import is present
+		`"github.com/example/user/model"`,
+	}
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+
+	// Bare "model.OAuthAccount" (without "auth" prefix) should NOT appear.
+	// Replace all correct occurrences, then check no bare ones remain.
+	stripped := strings.ReplaceAll(code, "authmodel.OAuthAccount", "")
+	if strings.Contains(stripped, "model.OAuthAccount") {
+		t.Errorf("unexpected bare %q in generated code:\n%s", "model.OAuthAccount", code)
+	}
+}
