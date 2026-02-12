@@ -17,6 +17,8 @@ type FieldInfo struct {
 	Column     string // DB column name from `db:"id"` tag
 	GoType     string // Go type as string, e.g. "int", "string", "time.Time"
 	PrimaryKey bool   // true if tag contains "primaryKey"
+	CreatedAt  bool   // true if this is a createdAt timestamp field
+	UpdatedAt  bool   // true if this is an updatedAt timestamp field
 }
 
 // RelationInfo holds parsed metadata for a relation field.
@@ -134,6 +136,8 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 	// Defaults: column inferred from field name, ID field is primary key.
 	column := naming.CamelToSnake(name)
 	primaryKey := name == "ID"
+	createdAt := name == "CreatedAt"
+	updatedAt := name == "UpdatedAt"
 
 	// Override with db tag if present.
 	if field.Tag != nil {
@@ -147,8 +151,13 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 				column = parts[0]
 			}
 			for _, opt := range parts[1:] {
-				if opt == "primaryKey" {
+				switch opt {
+				case "primaryKey":
 					primaryKey = true
+				case "createdAt":
+					createdAt = true
+				case "updatedAt":
+					updatedAt = true
 				}
 			}
 		}
@@ -159,6 +168,8 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 		Column:     column,
 		GoType:     goType,
 		PrimaryKey: primaryKey,
+		CreatedAt:  createdAt,
+		UpdatedAt:  updatedAt,
 	}, false
 }
 

@@ -51,10 +51,16 @@ func TestParse(t *testing.T) {
 			t.Errorf("Fields[0] = %+v", f)
 		}
 
-		// Check time.Time field
+		// Check time.Time field (CreatedAt convention)
 		f = info.Fields[5]
-		if f.Name != "CreatedAt" || f.Column != "created_at" || f.GoType != "time.Time" {
+		if f.Name != "CreatedAt" || f.Column != "created_at" || f.GoType != "time.Time" || !f.CreatedAt {
 			t.Errorf("Fields[5] = %+v", f)
+		}
+
+		// Check UpdatedAt convention
+		f = info.Fields[6]
+		if f.Name != "UpdatedAt" || f.Column != "updated_at" || !f.UpdatedAt {
+			t.Errorf("Fields[6] = %+v", f)
 		}
 	})
 
@@ -141,9 +147,86 @@ func TestParseInferredColumns(t *testing.T) {
 	}
 
 	f = info.Fields[2]
-	if f.Name != "CreatedAt" || f.Column != "created_at" {
+	if f.Name != "CreatedAt" || f.Column != "created_at" || !f.CreatedAt {
 		t.Errorf("Fields[2] = %+v", f)
 	}
+}
+
+func TestParseTimestamps(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("timestamps.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if len(infos) != 3 {
+		t.Fatalf("len(infos) = %d, want 3", len(infos))
+	}
+
+	t.Run("WithTimestamps convention", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[0]
+		if info.Name != "WithTimestamps" {
+			t.Fatalf("Name = %q, want %q", info.Name, "WithTimestamps")
+		}
+		// ID, Name, CreatedAt, UpdatedAt
+		if len(info.Fields) != 4 {
+			t.Fatalf("len(Fields) = %d, want 4", len(info.Fields))
+		}
+
+		f := info.Fields[2]
+		if f.Name != "CreatedAt" || f.Column != "created_at" || !f.CreatedAt {
+			t.Errorf("CreatedAt = %+v", f)
+		}
+		f = info.Fields[3]
+		if f.Name != "UpdatedAt" || f.Column != "updated_at" || !f.UpdatedAt {
+			t.Errorf("UpdatedAt = %+v", f)
+		}
+	})
+
+	t.Run("WithCustomTimestampCols tag", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[1]
+		if info.Name != "WithCustomTimestampCols" {
+			t.Fatalf("Name = %q, want %q", info.Name, "WithCustomTimestampCols")
+		}
+		if len(info.Fields) != 3 {
+			t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+		}
+
+		f := info.Fields[1]
+		if f.Name != "InsertedAt" || f.Column != "inserted_at" || !f.CreatedAt {
+			t.Errorf("InsertedAt = %+v", f)
+		}
+		f = info.Fields[2]
+		if f.Name != "ModifiedAt" || f.Column != "modified_at" || !f.UpdatedAt {
+			t.Errorf("ModifiedAt = %+v", f)
+		}
+	})
+
+	t.Run("WithTagAndConvention", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[2]
+		if info.Name != "WithTagAndConvention" {
+			t.Fatalf("Name = %q, want %q", info.Name, "WithTagAndConvention")
+		}
+		if len(info.Fields) != 3 {
+			t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+		}
+
+		f := info.Fields[1]
+		if f.Name != "CreatedAt" || f.Column != "created_at" || !f.CreatedAt {
+			t.Errorf("CreatedAt = %+v", f)
+		}
+		f = info.Fields[2]
+		if f.Name != "UpdatedAt" || f.Column != "updated_at" || !f.UpdatedAt {
+			t.Errorf("UpdatedAt = %+v", f)
+		}
+	})
 }
 
 func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with many assertions

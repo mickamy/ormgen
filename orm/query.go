@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mickamy/ormgen/scope"
 )
@@ -22,6 +23,15 @@ type ColumnValueFunc[T any] func(t *T, includesPK bool) (columns []string, value
 // SetPKFunc sets the auto-generated primary key on *T after INSERT.
 // May be nil when the primary key is not auto-generated.
 type SetPKFunc[T any] func(t *T, id int64)
+
+// SetCreatedAtFunc sets the createdAt timestamp on *T.
+// The implementation should only set the field if its current value is zero.
+// Generated per-type by ormgen; nil when no createdAt field exists.
+type SetCreatedAtFunc[T any] func(t *T, now time.Time)
+
+// SetUpdatedAtFunc sets the updatedAt timestamp on *T.
+// Generated per-type by ormgen; nil when no updatedAt field exists.
+type SetUpdatedAtFunc[T any] func(t *T, now time.Time)
 
 // PreloaderFunc executes a preload query and assigns results to the parent slice.
 // Generated per-relation by ormgen.
@@ -56,6 +66,10 @@ type Query[T any] struct {
 	joinDefs   map[string]JoinConfig
 	preloaders map[string]PreloaderFunc[T]
 	preloads   []string
+
+	createdAtCols []string
+	setCreatedAt  SetCreatedAtFunc[T]
+	setUpdatedAt  SetUpdatedAtFunc[T]
 }
 
 type whereClause struct {
@@ -98,6 +112,16 @@ func (q *Query[T]) RegisterPreloader(name string, fn PreloaderFunc[T]) {
 		q.preloaders = make(map[string]PreloaderFunc[T])
 	}
 	q.preloaders[name] = fn
+}
+
+// RegisterTimestamps configures automatic timestamp management.
+func (q *Query[T]) RegisterTimestamps(
+	createdAtCols []string, setCreatedAt SetCreatedAtFunc[T],
+	setUpdatedAt SetUpdatedAtFunc[T],
+) {
+	q.createdAtCols = createdAtCols
+	q.setCreatedAt = setCreatedAt
+	q.setUpdatedAt = setUpdatedAt
 }
 
 // clone returns a shallow copy with slices copied to avoid aliasing.
@@ -290,6 +314,8 @@ func (q *Query[T]) Exists(ctx context.Context) (bool, error) {
 // Create inserts a new row. If setPK is set, the primary key is populated
 // via RETURNING (PostgreSQL) or LastInsertId (MySQL).
 func (q *Query[T]) Create(ctx context.Context, t *T) error {
+	q.applyTimestamps(ctx, t, true)
+
 	includesPK := q.setPK == nil
 	columns, values := q.colValPairs(t, includesPK)
 
@@ -335,6 +361,10 @@ func (q *Query[T]) Create(ctx context.Context, t *T) error {
 func (q *Query[T]) CreateAll(ctx context.Context, items []*T) error {
 	if len(items) == 0 {
 		return nil
+	}
+
+	for _, item := range items {
+		q.applyTimestamps(ctx, item, true)
 	}
 
 	includesPK := q.setPK == nil
@@ -385,9 +415,11 @@ func (q *Query[T]) CreateAll(ctx context.Context, items []*T) error {
 }
 
 // Upsert inserts a row or updates it on primary key conflict.
-// All non-PK columns are updated on conflict.
+// All non-PK columns (except createdAt) are updated on conflict.
 // The primary key must be set on t before calling Upsert.
 func (q *Query[T]) Upsert(ctx context.Context, t *T) error {
+	q.applyTimestamps(ctx, t, true)
+
 	columns, values := q.colValPairs(t, true) // always include PK
 
 	query := q.buildUpsert(columns)
@@ -418,6 +450,8 @@ func (q *Query[T]) Upsert(ctx context.Context, t *T) error {
 // Update updates the row identified by the primary key of t.
 // All non-PK columns are SET.
 func (q *Query[T]) Update(ctx context.Context, t *T) error {
+	q.applyTimestamps(ctx, t, false)
+
 	allCols, allVals := q.colValPairs(t, true)
 
 	var setCols []string
@@ -577,7 +611,7 @@ func (q *Query[T]) buildUpsert(columns []string) string {
 
 	var updateCols []string
 	for _, col := range columns {
-		if col != q.pk {
+		if col != q.pk && !q.isCreatedAtCol(col) {
 			updateCols = append(updateCols, col)
 		}
 	}
@@ -658,4 +692,28 @@ func (q *Query[T]) rewrite(query string, args []any) (string, []any) {
 		}
 	}
 	return b.String(), args
+}
+
+// applyTimestamps sets createdAt and/or updatedAt on t using the Clock
+// from ctx (or time.Now). When isCreate is false, only updatedAt is set.
+func (q *Query[T]) applyTimestamps(ctx context.Context, t *T, isCreate bool) {
+	if q.setCreatedAt == nil && q.setUpdatedAt == nil {
+		return
+	}
+	n := now(ctx)
+	if isCreate && q.setCreatedAt != nil {
+		q.setCreatedAt(t, n)
+	}
+	if q.setUpdatedAt != nil {
+		q.setUpdatedAt(t, n)
+	}
+}
+
+func (q *Query[T]) isCreatedAtCol(col string) bool {
+	for _, c := range q.createdAtCols {
+		if c == col {
+			return true
+		}
+	}
+	return false
 }

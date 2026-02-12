@@ -52,35 +52,48 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 			return nil, err
 		}
 
+		createdAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.CreatedAt })
+		updatedAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.UpdatedAt })
+		hasTimestamps := len(createdAtFields) > 0 || len(updatedAtFields) > 0
+
 		data := templateData{
-			TypeName:    typePrefix + info.Name,
-			TableName:   info.TableName,
-			FactoryName: naming.SnakeToCamel(info.TableName),
-			PK:          pk,
-			Fields:      info.Fields,
-			ScanFunc:    unexportedName("scan" + info.Name),
-			ColValFunc:  unexportedName(info.Name + "ColumnValuePairs"),
-			SetPKFunc:   unexportedName("set" + info.Name + "PK"),
-			ColumnsVar:  unexportedName(naming.SnakeToCamel(info.TableName) + "Columns"),
-			IsIntPK:     isIntType(pk.GoType),
-			Relations:   buildRelationData(info, pk, typePrefix),
+			TypeName:         typePrefix + info.Name,
+			TableName:        info.TableName,
+			FactoryName:      naming.SnakeToCamel(info.TableName),
+			PK:               pk,
+			Fields:           info.Fields,
+			ScanFunc:         unexportedName("scan" + info.Name),
+			ColValFunc:       unexportedName(info.Name + "ColumnValuePairs"),
+			SetPKFunc:        unexportedName("set" + info.Name + "PK"),
+			ColumnsVar:       unexportedName(naming.SnakeToCamel(info.TableName) + "Columns"),
+			IsIntPK:          isIntType(pk.GoType),
+			Relations:        buildRelationData(info, pk, typePrefix),
+			SetCreatedAtFunc: unexportedName("set" + info.Name + "CreatedAt"),
+			SetUpdatedAtFunc: unexportedName("set" + info.Name + "UpdatedAt"),
+			CreatedAtFields:  createdAtFields,
+			UpdatedAtFields:  updatedAtFields,
+			HasTimestamps:    hasTimestamps,
 		}
 		structs = append(structs, data)
 	}
 
 	hasRelations := false
+	fileHasTimestamps := false
 	for _, s := range structs {
 		if len(s.Relations) > 0 {
 			hasRelations = true
-			break
+		}
+		if s.HasTimestamps {
+			fileHasTimestamps = true
 		}
 	}
 
 	fileData := fileTemplateData{
-		Package:      pkg,
-		SourceImport: opt.SourceImport,
-		HasRelations: hasRelations,
-		Structs:      structs,
+		Package:       pkg,
+		SourceImport:  opt.SourceImport,
+		HasRelations:  hasRelations,
+		HasTimestamps: fileHasTimestamps,
+		Structs:       structs,
 	}
 
 	var buf bytes.Buffer
@@ -96,24 +109,30 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 }
 
 type fileTemplateData struct {
-	Package      string
-	SourceImport string
-	HasRelations bool
-	Structs      []templateData
+	Package       string
+	SourceImport  string
+	HasRelations  bool
+	HasTimestamps bool
+	Structs       []templateData
 }
 
 type templateData struct {
-	TypeName    string
-	TableName   string
-	FactoryName string
-	PK          *FieldInfo
-	Fields      []FieldInfo
-	ScanFunc    string
-	ColValFunc  string
-	SetPKFunc   string
-	ColumnsVar  string
-	IsIntPK     bool
-	Relations   []relationTemplateData
+	TypeName         string
+	TableName        string
+	FactoryName      string
+	PK               *FieldInfo
+	Fields           []FieldInfo
+	ScanFunc         string
+	ColValFunc       string
+	SetPKFunc        string
+	ColumnsVar       string
+	IsIntPK          bool
+	Relations        []relationTemplateData
+	SetCreatedAtFunc string
+	SetUpdatedAtFunc string
+	CreatedAtFields  []FieldInfo
+	UpdatedAtFields  []FieldInfo
+	HasTimestamps    bool
 }
 
 type relationTemplateData struct {
@@ -147,11 +166,20 @@ func (d templateData) NonPKFields() []FieldInfo {
 	return fields
 }
 
+func (d templateData) CreatedAtColumns() []string {
+	cols := make([]string, len(d.CreatedAtFields))
+	for i, f := range d.CreatedAtFields {
+		cols[i] = f.Column
+	}
+	return cols
+}
+
 var funcMap = template.FuncMap{
 	"join": strings.Join,
 	"quote": func(s string) string {
 		return `"` + s + `"`
 	},
+	"hasPrefix": strings.HasPrefix,
 }
 
 var fileTmpl = template.Must(template.New("gen").Funcs(funcMap).Parse(fileTemplate))
@@ -164,6 +192,9 @@ import (
 	"context"
 	{{- end}}
 	"database/sql"
+	{{- if .HasTimestamps}}
+	"time"
+	{{- end}}
 
 	"github.com/mickamy/ormgen/orm"
 	{{- if .HasRelations}}
@@ -176,7 +207,7 @@ import (
 {{range .Structs}}
 // {{.FactoryName}} returns a new Query for the {{.TableName}} table.
 func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
-	{{- if .Relations}}
+	{{- if or .Relations .HasTimestamps}}
 	q := orm.NewQuery[{{.TypeName}}](
 		db, orm.ResolveTableName[{{.TypeName}}]("{{.TableName}}"), {{.ColumnsVar}}, "{{.PK.Column}}",
 		{{.ScanFunc}}, {{.ColValFunc}}, {{if .IsIntPK}}{{.SetPKFunc}}{{else}}nil{{end}},
@@ -189,6 +220,13 @@ func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 	})
 	{{- end}}
 	q.RegisterPreloader("{{.FieldName}}", {{.PreloaderName}})
+	{{- end}}
+	{{- if .HasTimestamps}}
+	q.RegisterTimestamps(
+		{{if .CreatedAtFields}}[]string{ {{- range $i, $c := .CreatedAtColumns}}{{if $i}}, {{end}}{{quote $c}}{{end -}} }{{else}}nil{{end}},
+		{{if .CreatedAtFields}}{{.SetCreatedAtFunc}}{{else}}nil{{end}},
+		{{if .UpdatedAtFields}}{{.SetUpdatedAtFunc}}{{else}}nil{{end}},
+	)
 	{{- end}}
 	return q
 	{{- else}}
@@ -232,6 +270,32 @@ func {{.SetPKFunc}}(v *{{.TypeName}}, id int64) {
 	v.{{.PK.Name}} = {{.PK.GoType}}(id)
 }
 {{end}}
+{{- if .CreatedAtFields}}
+func {{.SetCreatedAtFunc}}(v *{{.TypeName}}, now time.Time) {
+	{{- range .CreatedAtFields}}
+	{{- if hasPrefix .GoType "*"}}
+	if v.{{.Name}} == nil {
+		v.{{.Name}} = &now
+	}
+	{{- else}}
+	if v.{{.Name}}.IsZero() {
+		v.{{.Name}} = now
+	}
+	{{- end}}
+	{{- end}}
+}
+{{- end}}
+{{- if .UpdatedAtFields}}
+func {{.SetUpdatedAtFunc}}(v *{{.TypeName}}, now time.Time) {
+	{{- range .UpdatedAtFields}}
+	{{- if hasPrefix .GoType "*"}}
+	v.{{.Name}} = &now
+	{{- else}}
+	v.{{.Name}} = now
+	{{- end}}
+	{{- end}}
+}
+{{- end}}
 {{- range .Relations}}
 {{- if eq .RelType "has_many"}}
 func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.ParentType}}) error {
@@ -405,6 +469,16 @@ func unexportedName(s string) string {
 	runes := []rune(s)
 	runes[0] = unicode.ToLower(runes[0])
 	return string(runes)
+}
+
+func filterFields(fields []FieldInfo, pred func(FieldInfo) bool) []FieldInfo {
+	var out []FieldInfo
+	for _, f := range fields {
+		if pred(f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func isIntType(goType string) bool {

@@ -2,7 +2,9 @@ package orm_test
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mickamy/ormgen/orm"
 	"github.com/mickamy/ormgen/scope"
@@ -330,5 +332,165 @@ func TestFirstAddsLimit(t *testing.T) {
 	want := "SELECT `id`, `name` FROM `users` LIMIT 1"
 	if got.SQL != want {
 		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+// --- Timestamp tests ---
+
+type testArticle struct {
+	ID        int
+	Title     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+var testArticleColumns = []string{"id", "title", "created_at", "updated_at"}
+
+func scanTestArticle(_ *sql.Rows) (testArticle, error) {
+	return testArticle{}, nil
+}
+
+func testArticleColValPairs(a *testArticle, includesPK bool) ([]string, []any) {
+	if includesPK {
+		return []string{"id", "title", "created_at", "updated_at"},
+			[]any{a.ID, a.Title, a.CreatedAt, a.UpdatedAt}
+	}
+	return []string{"title", "created_at", "updated_at"},
+		[]any{a.Title, a.CreatedAt, a.UpdatedAt}
+}
+
+func setTestArticlePK(a *testArticle, id int64) {
+	a.ID = int(id)
+}
+
+func setTestArticleCreatedAt(a *testArticle, now time.Time) {
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = now
+	}
+}
+
+func setTestArticleUpdatedAt(a *testArticle, now time.Time) {
+	a.UpdatedAt = now
+}
+
+func newTestArticleQuery(tq *orm.TestQuerier) *orm.Query[testArticle] {
+	q := orm.NewQuery[testArticle](tq, "articles", testArticleColumns, "id", scanTestArticle, testArticleColValPairs, setTestArticlePK)
+	q.RegisterTimestamps([]string{"created_at"}, setTestArticleCreatedAt, setTestArticleUpdatedAt)
+	return q
+}
+
+type fixedClock struct {
+	t time.Time
+}
+
+func (c fixedClock) Now() time.Time { return c.t }
+
+func TestUpsertExcludesCreatedAtFromUpdate(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestArticleQuery(tq)
+
+	a := testArticle{ID: 1, Title: "hello"}
+	_ = q.Upsert(t.Context(), &a)
+
+	got := tq.LastQuery()
+	// UPDATE clause should NOT contain created_at
+	if strings.Contains(got.SQL, "ON DUPLICATE KEY UPDATE") {
+		updatePart := got.SQL[strings.Index(got.SQL, "ON DUPLICATE KEY UPDATE"):]
+		if strings.Contains(updatePart, "created_at") {
+			t.Errorf("UPDATE clause should not contain created_at: %s", got.SQL)
+		}
+		if !strings.Contains(updatePart, "updated_at") {
+			t.Errorf("UPDATE clause should contain updated_at: %s", got.SQL)
+		}
+	} else {
+		t.Errorf("expected ON DUPLICATE KEY UPDATE in SQL: %s", got.SQL)
+	}
+}
+
+func TestUpsertExcludesCreatedAtPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.PostgreSQL)
+	q := newTestArticleQuery(tq)
+
+	a := testArticle{ID: 1, Title: "hello"}
+	_ = q.Upsert(t.Context(), &a)
+
+	got := tq.LastQuery()
+	// DO UPDATE SET should NOT contain created_at
+	if strings.Contains(got.SQL, "DO UPDATE SET") {
+		updatePart := got.SQL[strings.Index(got.SQL, "DO UPDATE SET"):]
+		if strings.Contains(updatePart, "created_at") {
+			t.Errorf("UPDATE SET should not contain created_at: %s", got.SQL)
+		}
+		if !strings.Contains(updatePart, "updated_at") {
+			t.Errorf("UPDATE SET should contain updated_at: %s", got.SQL)
+		}
+	} else {
+		t.Errorf("expected DO UPDATE SET in SQL: %s", got.SQL)
+	}
+}
+
+func TestCreateAutoSetsTimestamps(t *testing.T) {
+	t.Parallel()
+
+	fixed := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	ctx := orm.WithClock(t.Context(), fixedClock{t: fixed})
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestArticleQuery(tq)
+
+	a := testArticle{Title: "hello"}
+	_ = q.Create(ctx, &a)
+
+	if a.CreatedAt != fixed {
+		t.Errorf("CreatedAt = %v, want %v", a.CreatedAt, fixed)
+	}
+	if a.UpdatedAt != fixed {
+		t.Errorf("UpdatedAt = %v, want %v", a.UpdatedAt, fixed)
+	}
+}
+
+func TestCreatePreservesExistingCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	existing := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	fixed := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	ctx := orm.WithClock(t.Context(), fixedClock{t: fixed})
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestArticleQuery(tq)
+
+	a := testArticle{Title: "hello", CreatedAt: existing}
+	_ = q.Create(ctx, &a)
+
+	if a.CreatedAt != existing {
+		t.Errorf("CreatedAt = %v, want %v (should not be overwritten)", a.CreatedAt, existing)
+	}
+	if a.UpdatedAt != fixed {
+		t.Errorf("UpdatedAt = %v, want %v", a.UpdatedAt, fixed)
+	}
+}
+
+func TestUpdateOnlySetsUpdatedAt(t *testing.T) {
+	t.Parallel()
+
+	existing := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	fixed := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	ctx := orm.WithClock(t.Context(), fixedClock{t: fixed})
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestArticleQuery(tq)
+
+	a := testArticle{ID: 1, Title: "hello", CreatedAt: existing}
+	_ = q.Update(ctx, &a)
+
+	if a.CreatedAt != existing {
+		t.Errorf("CreatedAt = %v, want %v (Update should not touch createdAt)", a.CreatedAt, existing)
+	}
+	if a.UpdatedAt != fixed {
+		t.Errorf("UpdatedAt = %v, want %v", a.UpdatedAt, fixed)
 	}
 }

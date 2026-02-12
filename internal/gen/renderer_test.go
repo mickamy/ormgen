@@ -60,6 +60,10 @@ func TestRenderUser(t *testing.T) {
 		"dest[i] = &v.ID",
 		"dest[i] = &v.CreatedAt",
 		"v.ID = int(id)",
+		// User has CreatedAt and UpdatedAt by convention
+		"setUserCreatedAt",
+		"setUserUpdatedAt",
+		"q.RegisterTimestamps(",
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
@@ -234,6 +238,57 @@ func TestRenderRelations(t *testing.T) {
 	for _, unwanted := range negativeChecks {
 		if strings.Contains(code, unwanted) {
 			t.Errorf("unexpected %q in generated code:\n%s", unwanted, code)
+		}
+	}
+}
+
+func TestRenderTimestamps(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("timestamps.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	// Test all three timestamp structs
+	findStruct(t, infos, "WithTimestamps").TableName = "with_timestamps"
+	findStruct(t, infos, "WithCustomTimestampCols").TableName = "with_custom_timestamp_cols"
+	findStruct(t, infos, "WithTagAndConvention").TableName = "with_tag_and_conventions"
+
+	src, err := gen.RenderFile(infos, gen.RenderOption{})
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "timestamps_gen.go", src, 0); err != nil {
+		t.Fatalf("generated code does not parse: %v\n%s", err, code)
+	}
+
+	checks := []string{
+		// time import
+		`"time"`,
+		// Convention-based: RegisterTimestamps call
+		`q.RegisterTimestamps(`,
+		// Convention-based: setter functions
+		"func setWithTimestampsCreatedAt(v *WithTimestamps, now time.Time)",
+		"func setWithTimestampsUpdatedAt(v *WithTimestamps, now time.Time)",
+		// Zero check for createdAt
+		"if v.CreatedAt.IsZero()",
+		// updatedAt always sets
+		"v.UpdatedAt = now",
+		// Custom tag: setter functions
+		"func setWithCustomTimestampColsCreatedAt(v *WithCustomTimestampCols, now time.Time)",
+		"func setWithCustomTimestampColsUpdatedAt(v *WithCustomTimestampCols, now time.Time)",
+		// createdAt column list
+		`"created_at"`,
+		`"inserted_at"`,
+	}
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
 		}
 	}
 }
