@@ -247,27 +247,32 @@ func typeToString(expr ast.Expr) string {
 	}
 }
 
-// isCompositeType returns true for slice, pointer-to-struct, and struct value
-// types that should be auto-skipped as DB columns (they are likely relation
-// fields). Exported identifiers (e.g. User, Post) are treated as struct types.
-// Builtin types (int, string, bool, etc.) are lowercase and pass through.
+// isCompositeType returns true for types that are likely relation fields
+// (not DB columns). Only same-package exported types (e.g. User, Post)
+// are treated as model structs. External package types (e.g. time.Time)
+// and builtin types (e.g. string) are treated as columns.
 func isCompositeType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.ArrayType:
-		return true // []T or [N]T
+		// []User → relation, []string → column
+		return isModelType(t.Elt)
 	case *ast.Ident:
-		// Exported ident in same package = struct type (User, Post, etc.)
-		// Builtin types (int, string, bool, ...) are lowercase and won't match.
 		return t.IsExported()
 	case *ast.StarExpr:
-		// *T where T is a struct name (not *string etc.)
-		if ident, ok := t.X.(*ast.Ident); ok {
-			return ident.IsExported()
-		}
-		// *pkg.Type
-		if _, ok := t.X.(*ast.SelectorExpr); ok {
-			return true
-		}
+		// *User → relation, *time.Time → column
+		return isModelType(t.X)
+	}
+	return false
+}
+
+// isModelType returns true if expr refers to a same-package exported type
+// (likely a model struct). External package types (pkg.Type) return false.
+func isModelType(expr ast.Expr) bool {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.IsExported()
+	case *ast.StarExpr:
+		return isModelType(t.X)
 	}
 	return false
 }
