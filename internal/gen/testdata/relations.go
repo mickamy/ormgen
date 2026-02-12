@@ -27,5 +27,5 @@ type Article struct {
 	AuthorID int
 	Title    string
 	// belongs_to: Article belongs to Author
-	Author *Author `rel:"belongs_to,foreign_key:author_id"`
+	Author Author `rel:"belongs_to,foreign_key:author_id"`
 }

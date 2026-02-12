@@ -222,6 +222,8 @@ func TestRenderRelations(t *testing.T) {
 		`scope.In("id", targetIDs)`,
 		"Tags(db)",
 		// No RegisterJoin for many_to_many
+		// Non-pointer belongs_to: value-type map (no pointer)
+		"byPK := make(map[int]Author)",
 		// Imports
 		`"context"`,
 		`"github.com/mickamy/ormgen/scope"`,
@@ -229,6 +231,8 @@ func TestRenderRelations(t *testing.T) {
 	// many_to_many should NOT generate RegisterJoin
 	negativeChecks := []string{
 		`q.RegisterJoin("Tags"`,
+		// Non-pointer belongs_to should NOT use pointer map
+		"map[int]*Author",
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {

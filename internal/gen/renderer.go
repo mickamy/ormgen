@@ -424,10 +424,17 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	if err != nil {
 		return err
 	}
+	{{- if .IsPointer}}
 	byPK := make(map[{{.KeyType}}]*{{.TargetType}})
 	for i := range related {
 		byPK[related[i].ID] = &related[i]
 	}
+	{{- else}}
+	byPK := make(map[{{.KeyType}}]{{.TargetType}})
+	for _, r := range related {
+		byPK[r.ID] = r
+	}
+	{{- end}}
 	for i := range results {
 		results[i].{{.FieldName}} = byPK[results[i].{{.ForeignKeyField}}]
 	}

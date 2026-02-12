@@ -407,8 +407,8 @@ func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with m
 		if rel.IsSlice {
 			t.Error("IsSlice = true, want false")
 		}
-		if !rel.IsPointer {
-			t.Error("IsPointer = false, want true")
+		if rel.IsPointer {
+			t.Error("IsPointer = true, want false")
 		}
 	})
 }
