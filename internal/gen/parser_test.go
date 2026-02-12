@@ -229,6 +229,65 @@ func TestParseTimestamps(t *testing.T) {
 	})
 }
 
+func TestParseCustomTypes(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("custom_types.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if len(infos) != 2 {
+		t.Fatalf("len(infos) = %d, want 2", len(infos))
+	}
+
+	t.Run("Repository with db tag", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[0]
+		if info.Name != "Repository" {
+			t.Fatalf("Name = %q, want %q", info.Name, "Repository")
+		}
+
+		// ID, Name, Topics
+		if len(info.Fields) != 3 {
+			t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+		}
+
+		f := info.Fields[2]
+		if f.Name != "Topics" || f.Column != "topics" || f.GoType != "StringArray" {
+			t.Errorf("Fields[2] = %+v", f)
+		}
+	})
+
+	t.Run("NoTagCustomType convention", func(t *testing.T) {
+		t.Parallel()
+
+		info := infos[1]
+		if info.Name != "NoTagCustomType" {
+			t.Fatalf("Name = %q, want %q", info.Name, "NoTagCustomType")
+		}
+
+		// ID, Name, Tags — Owner (*User with rel tag) should be skipped
+		if len(info.Fields) != 3 {
+			t.Fatalf("len(Fields) = %d, want 3", len(info.Fields))
+		}
+
+		f := info.Fields[2]
+		if f.Name != "Tags" || f.Column != "tags" || f.GoType != "StringArray" {
+			t.Errorf("Fields[2] = %+v", f)
+		}
+
+		// Owner should be in relations, not fields
+		if len(info.Relations) != 1 {
+			t.Fatalf("len(Relations) = %d, want 1", len(info.Relations))
+		}
+		if info.Relations[0].FieldName != "Owner" {
+			t.Errorf("Relations[0].FieldName = %q, want %q", info.Relations[0].FieldName, "Owner")
+		}
+	})
+}
+
 func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with many assertions
 	t.Parallel()
 

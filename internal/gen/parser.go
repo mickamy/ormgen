@@ -126,11 +126,6 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 		return FieldInfo{}, true
 	}
 
-	// Skip slice and pointer-to-struct fields (likely relations, not columns).
-	if isCompositeType(field.Type) {
-		return FieldInfo{}, true
-	}
-
 	goType := typeToString(field.Type)
 
 	// Defaults: column inferred from field name, ID field is primary key.
@@ -138,6 +133,21 @@ func parseField(field *ast.Field) (FieldInfo, bool) {
 	primaryKey := name == "ID"
 	createdAt := name == "CreatedAt"
 	updatedAt := name == "UpdatedAt"
+
+	// Skip relation fields — they are handled by parseRelations.
+	if field.Tag != nil {
+		tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+		if _, ok := tag.Lookup("rel"); ok {
+			return FieldInfo{}, true
+		}
+	}
+
+	// Skip slice and pointer-to-struct fields (likely relations, not columns).
+	// Bare exported idents (e.g. StringArray) are NOT skipped here because
+	// they may be custom column types implementing sql.Scanner/driver.Valuer.
+	if isCompositeType(field.Type) {
+		return FieldInfo{}, true
+	}
 
 	// Override with db tag if present.
 	if field.Tag != nil {
@@ -266,14 +276,15 @@ func typeToString(expr ast.Expr) string {
 //     []string, []byte etc. are columns.
 //   - *T: relation only if T is a same-package exported type.
 //     *time.Time, *sql.NullString etc. are columns.
-//   - T (bare ident): relation if exported same-package type.
+//
+// Bare exported idents (e.g. StringArray, JSON) are NOT considered
+// composite — they may be custom column types. Relation fields using
+// bare types must be marked with a rel tag instead.
 func isCompositeType(expr ast.Expr) bool {
 	switch t := expr.(type) {
 	case *ast.ArrayType:
 		// []User, []pkg.Model → relation; []string, []byte → column
 		return isStructType(t.Elt)
-	case *ast.Ident:
-		return t.IsExported()
 	case *ast.StarExpr:
 		// *User → relation; *time.Time → column
 		return isSamePackageModel(t.X)
