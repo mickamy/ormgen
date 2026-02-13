@@ -4,6 +4,7 @@ package query
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/mickamy/ormgen/example/model"
 	"github.com/mickamy/ormgen/orm"
@@ -27,6 +28,11 @@ func Users(db orm.Querier) *orm.Query[model.User] {
 	})
 	q.RegisterPreloader("Profile", preloadUserProfile)
 	q.RegisterPreloader("Tags", preloadUserTags)
+	q.RegisterTimestamps(
+		[]string{"created_at"},
+		setUserCreatedAt,
+		nil,
+	)
 	return q
 }
 
@@ -67,6 +73,11 @@ func setUserPK(v *model.User, id int64) {
 	v.ID = int(id)
 }
 
+func setUserCreatedAt(v *model.User, now time.Time) {
+	if v.CreatedAt.IsZero() {
+		v.CreatedAt = now
+	}
+}
 func preloadUserPosts(ctx context.Context, db orm.Querier, results []model.User) error {
 	if len(results) == 0 {
 		return nil

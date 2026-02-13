@@ -59,7 +59,7 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		updatedAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.UpdatedAt })
 		hasTimestamps := len(createdAtFields) > 0 || len(updatedAtFields) > 0
 
-		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport, opt.DestPkg)
+		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport, opt.DestPkg, infos)
 		for _, ei := range extraImports {
 			if !seenImports[ei.Path] {
 				seenImports[ei.Path] = true
@@ -173,6 +173,15 @@ type relationTemplateData struct {
 	References       string // many_to_many only: "tag_id"
 	TargetTable      string // many_to_many only: target table name "tags"
 	TargetPKColumn   string // many_to_many only: target PK column "id"
+
+	// Join scan support (belongs_to / has_one, same-package only).
+	// nil when join scan is not supported (cross-package, has_many, many_to_many).
+	JoinScanFields    []FieldInfo // target struct's DB fields
+	JoinSelectColumns []string    // target column names for JoinConfig.SelectColumns
+	JoinPKGoType      string      // target PK Go type, e.g. "int"
+	JoinPKName        string      // target PK Go field name, e.g. "ID"
+	JoinNullType      string      // nullable wrapper, e.g. "sql.NullInt64" (pointer only)
+	JoinNullField     string      // accessor on NullXxx, e.g. ".Int64" (pointer only)
 }
 
 func (d templateData) NonPKFields() []FieldInfo {
@@ -243,6 +252,9 @@ func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 	q.RegisterJoin("{{.FieldName}}", orm.JoinConfig{
 		TargetTable: orm.ResolveTableName[{{.TargetType}}]("{{.JoinTargetTable}}"), TargetColumn: "{{.JoinTargetColumn}}",
 		SourceTable: orm.ResolveTableName[{{.ParentType}}]("{{.JoinSourceTable}}"), SourceColumn: "{{.JoinSourceColumn}}",
+		{{- if .JoinSelectColumns}}
+		SelectColumns: []string{ {{- range $i, $c := .JoinSelectColumns}}{{if $i}}, {{end}}{{quote $c}}{{end -}} },
+		{{- end}}
 	})
 	{{- end}}
 	q.RegisterPreloader("{{.FieldName}}", {{.PreloaderName}})
@@ -268,6 +280,12 @@ var {{.ColumnsVar}} = []string{ {{- range $i, $f := .Fields}}{{if $i}}, {{end}}{
 func {{.ScanFunc}}(rows *sql.Rows) ({{.TypeName}}, error) {
 	cols, _ := rows.Columns()
 	var v {{.TypeName}}
+	{{- range .Relations}}
+	{{- if and .JoinScanFields .IsPointer}}
+	var joinScan{{.FieldName}}PK {{.JoinNullType}}
+	var joinScan{{.FieldName}} {{.TargetType}}
+	{{- end}}
+	{{- end}}
 	dest := make([]any, len(cols))
 	for i, col := range cols {
 		switch col {
@@ -275,11 +293,33 @@ func {{.ScanFunc}}(rows *sql.Rows) ({{.TypeName}}, error) {
 		case {{quote .Column}}:
 			dest[i] = &v.{{.Name}}
 		{{- end}}
+		{{- range $rel := .Relations}}
+		{{- range $f := $rel.JoinScanFields}}
+		{{- if and $rel.IsPointer $f.PrimaryKey}}
+		case "{{$rel.FieldName}}__{{$f.Column}}":
+			dest[i] = &joinScan{{$rel.FieldName}}PK
+		{{- else if $rel.IsPointer}}
+		case "{{$rel.FieldName}}__{{$f.Column}}":
+			dest[i] = &joinScan{{$rel.FieldName}}.{{$f.Name}}
+		{{- else}}
+		case "{{$rel.FieldName}}__{{$f.Column}}":
+			dest[i] = &v.{{$rel.FieldName}}.{{$f.Name}}
+		{{- end}}
+		{{- end}}
+		{{- end}}
 		default:
 			dest[i] = new(any)
 		}
 	}
 	err := rows.Scan(dest...)
+	{{- range .Relations}}
+	{{- if and .JoinScanFields .IsPointer}}
+	if joinScan{{.FieldName}}PK.Valid {
+		joinScan{{.FieldName}}.{{.JoinPKName}} = {{.JoinPKGoType}}(joinScan{{.FieldName}}PK{{.JoinNullField}})
+		v.{{.FieldName}} = &joinScan{{.FieldName}}
+	}
+	{{- end}}
+	{{- end}}
 	return v, err
 }
 
@@ -444,7 +484,7 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 {{- end}}
 {{end}}`
 
-func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport, destPkg string) ([]relationTemplateData, []importEntry) {
+func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport, destPkg string, allInfos []*StructInfo) ([]relationTemplateData, []importEntry) {
 	if len(info.Relations) == 0 {
 		return nil, nil
 	}
@@ -529,6 +569,25 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 			rd.JoinSourceColumn = rel.ForeignKey
 		}
 
+		// Populate join scan fields for belongs_to / has_one when the target
+		// struct is in the same package (available in allInfos).
+		if (rel.RelType == "belongs_to" || rel.RelType == "has_one") && !isCrossPkg {
+			if targetInfo := findStructInfo(allInfos, rel.TargetType); targetInfo != nil {
+				rd.JoinScanFields = targetInfo.Fields
+				rd.JoinSelectColumns = make([]string, len(targetInfo.Fields))
+				for i, f := range targetInfo.Fields {
+					rd.JoinSelectColumns[i] = f.Column
+				}
+				if targetPK, err := targetInfo.PrimaryKeyField(); err == nil {
+					rd.JoinPKGoType = targetPK.GoType
+					rd.JoinPKName = targetPK.Name
+					if rel.IsPointer {
+						rd.JoinNullType, rd.JoinNullField = nullTypeFor(targetPK.GoType)
+					}
+				}
+			}
+		}
+
 		rels = append(rels, rd)
 	}
 	return rels, extraImports
@@ -595,6 +654,22 @@ func filterFields(fields []FieldInfo, pred func(FieldInfo) bool) []FieldInfo {
 		}
 	}
 	return out
+}
+
+func findStructInfo(infos []*StructInfo, name string) *StructInfo {
+	for _, info := range infos {
+		if info.Name == name {
+			return info
+		}
+	}
+	return nil
+}
+
+func nullTypeFor(goType string) (nullType, nullField string) {
+	if goType == "string" {
+		return "sql.NullString", ".String"
+	}
+	return "sql.NullInt64", ".Int64"
 }
 
 func isIntType(goType string) bool {

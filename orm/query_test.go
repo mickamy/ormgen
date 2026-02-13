@@ -546,6 +546,72 @@ func TestBuildSelectWithScopeLeftJoin(t *testing.T) {
 	}
 }
 
+func TestBuildSelectWithJoinSelectColumns(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+	q.RegisterJoin("Author", orm.JoinConfig{
+		TargetTable:   "authors",
+		TargetColumn:  "id",
+		SourceTable:   "users",
+		SourceColumn:  "author_id",
+		SelectColumns: []string{"id", "name"},
+	})
+
+	_, _ = q.Join("Author").All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `users`.`id`, `users`.`name`, `authors`.`id` AS `Author__id`, `authors`.`name` AS `Author__name` FROM `users` INNER JOIN `authors` ON `authors`.`id` = `users`.`author_id`"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectWithJoinSelectColumnsPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.PostgreSQL)
+	q := newTestQuery(tq)
+	q.RegisterJoin("Author", orm.JoinConfig{
+		TargetTable:   "authors",
+		TargetColumn:  "id",
+		SourceTable:   "users",
+		SourceColumn:  "author_id",
+		SelectColumns: []string{"id", "name"},
+	})
+
+	_, _ = q.Join("Author").All(t.Context())
+
+	got := tq.LastQuery()
+	want := `SELECT "users"."id", "users"."name", "authors"."id" AS "Author__id", "authors"."name" AS "Author__name" FROM "users" INNER JOIN "authors" ON "authors"."id" = "users"."author_id"`
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectWithJoinNoSelectColumns(t *testing.T) {
+	t.Parallel()
+
+	// When SelectColumns is nil (e.g. has_many), no extra columns are added.
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+	q.RegisterJoin("Posts", orm.JoinConfig{
+		TargetTable:  "posts",
+		TargetColumn: "user_id",
+		SourceTable:  "users",
+		SourceColumn: "id",
+	})
+
+	_, _ = q.Join("Posts").All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `users`.`id`, `users`.`name` FROM `users` INNER JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
 func TestBuildSelectWithScopePreload(t *testing.T) {
 	t.Parallel()
 

@@ -339,6 +339,69 @@ func TestRenderFileCrossPackage(t *testing.T) {
 	}
 }
 
+func TestRenderJoinScan(t *testing.T) {
+	t.Parallel()
+
+	infos, err := gen.Parse(testdataPath("relations.go"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	findStruct(t, infos, "Author").TableName = "authors"
+	findStruct(t, infos, "Article").TableName = "articles"
+	findStruct(t, infos, "Profile").TableName = "profiles"
+	findStruct(t, infos, "Tag").TableName = "tags"
+
+	src, err := gen.RenderFile(infos, gen.RenderOption{})
+	if err != nil {
+		t.Fatalf("RenderFile: %v", err)
+	}
+
+	code := string(src)
+
+	checks := []string{
+		// belongs_to (non-pointer): Article.Author — scan directly into v.Author.Field
+		`case "Author__id":`,
+		`dest[i] = &v.Author.ID`,
+		`case "Author__name":`,
+		`dest[i] = &v.Author.Name`,
+		// SelectColumns in RegisterJoin for belongs_to
+		`SelectColumns: []string{"id", "name"},`,
+		// has_one (pointer): Author.Profile — uses NullInt64 + temp struct
+		`var joinScanProfilePK sql.NullInt64`,
+		`var joinScanProfile Profile`,
+		`case "Profile__id":`,
+		`dest[i] = &joinScanProfilePK`,
+		`case "Profile__bio":`,
+		`dest[i] = &joinScanProfile.Bio`,
+		`if joinScanProfilePK.Valid {`,
+		`joinScanProfile.ID = int(joinScanProfilePK.Int64)`,
+		`v.Profile = &joinScanProfile`,
+		// SelectColumns in RegisterJoin for has_one
+		`SelectColumns: []string{"id", "author_id", "bio"},`,
+	}
+
+	negativeChecks := []string{
+		// has_many (Articles) should NOT have SelectColumns
+		// Check that Articles RegisterJoin doesn't have SelectColumns by
+		// looking for a pattern that would only appear if has_many got SelectColumns.
+		`SelectColumns: []string{"id", "author_id", "title"},`,
+		// many_to_many (Tags) should NOT have join scan
+		`joinScanTag`,
+	}
+
+	for _, want := range checks {
+		if !strings.Contains(code, want) {
+			t.Errorf("missing %q in generated code:\n%s", want, code)
+		}
+	}
+	for _, unwanted := range negativeChecks {
+		if strings.Contains(code, unwanted) {
+			t.Errorf("unexpected %q in generated code:\n%s", unwanted, code)
+		}
+	}
+}
+
 func TestRenderCrossPackageRelations(t *testing.T) {
 	t.Parallel()
 

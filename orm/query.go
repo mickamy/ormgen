@@ -39,10 +39,11 @@ type PreloaderFunc[T any] func(ctx context.Context, db Querier, results []T) err
 
 // JoinConfig holds the metadata needed to build a JOIN clause at runtime.
 type JoinConfig struct {
-	TargetTable  string
-	TargetColumn string
-	SourceTable  string
-	SourceColumn string
+	TargetTable   string
+	TargetColumn  string
+	SourceTable   string
+	SourceColumn  string
+	SelectColumns []string // target table columns to SELECT with aliases (nil = no extra SELECT)
 }
 
 // Query represents a pending query against a single table.
@@ -63,9 +64,10 @@ type Query[T any] struct {
 	limit    *int
 	offset   *int
 
-	joinDefs   map[string]JoinConfig
-	preloaders map[string]PreloaderFunc[T]
-	preloads   []string
+	joinDefs       map[string]JoinConfig
+	activeJoinNames []string
+	preloaders     map[string]PreloaderFunc[T]
+	preloads       []string
 
 	createdAtCols []string
 	setCreatedAt  SetCreatedAtFunc[T]
@@ -130,6 +132,7 @@ func (q *Query[T]) clone() *Query[T] {
 	q2.wheres = append([]whereClause(nil), q.wheres...)
 	q2.orderBys = append([]string(nil), q.orderBys...)
 	q2.joins = append([]string(nil), q.joins...)
+	q2.activeJoinNames = append([]string(nil), q.activeJoinNames...)
 	q2.preloads = append([]string(nil), q.preloads...)
 	return &q2
 }
@@ -195,6 +198,7 @@ func (q *Query[T]) applyJoin(joinType, name string) {
 		q.qi(cfg.SourceTable), q.qi(cfg.SourceColumn),
 	)
 	q.joins = append(q.joins, clause)
+	q.activeJoinNames = append(q.activeJoinNames, name)
 }
 
 // Preload registers a relation to be eagerly loaded after the main query.
@@ -532,6 +536,17 @@ func (q *Query[T]) buildSelect() (string, []any) {
 		b.WriteString(*q.selects)
 	} else if len(q.joins) > 0 {
 		b.WriteString(q.qualifiedColumns())
+		for _, name := range q.activeJoinNames {
+			cfg := q.joinDefs[name]
+			for _, col := range cfg.SelectColumns {
+				b.WriteString(", ")
+				b.WriteString(q.qi(cfg.TargetTable))
+				b.WriteByte('.')
+				b.WriteString(q.qi(col))
+				b.WriteString(" AS ")
+				b.WriteString(q.qi(name + "__" + col))
+			}
+		}
 	} else {
 		b.WriteString(q.quoteColumns(q.columns))
 	}
