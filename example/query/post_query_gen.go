@@ -19,6 +19,7 @@ func Posts(db orm.Querier) *orm.Query[model.Post] {
 	q.RegisterJoin("User", orm.JoinConfig{
 		TargetTable: orm.ResolveTableName[model.User]("users"), TargetColumn: "id",
 		SourceTable: orm.ResolveTableName[model.Post]("posts"), SourceColumn: "user_id",
+		SelectColumns: []string{"id", "name", "email", "created_at"},
 	})
 	q.RegisterPreloader("User", preloadPostUser)
 	return q
@@ -29,6 +30,8 @@ var postsColumns = []string{"id", "user_id", "title", "body"}
 func scanPost(rows *sql.Rows) (model.Post, error) {
 	cols, _ := rows.Columns()
 	var v model.Post
+	var joinScanUserPK sql.NullInt64
+	var joinScanUser model.User
 	dest := make([]any, len(cols))
 	for i, col := range cols {
 		switch col {
@@ -40,11 +43,23 @@ func scanPost(rows *sql.Rows) (model.Post, error) {
 			dest[i] = &v.Title
 		case "body":
 			dest[i] = &v.Body
+		case "User__id":
+			dest[i] = &joinScanUserPK
+		case "User__name":
+			dest[i] = &joinScanUser.Name
+		case "User__email":
+			dest[i] = &joinScanUser.Email
+		case "User__created_at":
+			dest[i] = &joinScanUser.CreatedAt
 		default:
 			dest[i] = new(any)
 		}
 	}
 	err := rows.Scan(dest...)
+	if joinScanUserPK.Valid {
+		joinScanUser.ID = int(joinScanUserPK.Int64)
+		v.User = &joinScanUser
+	}
 	return v, err
 }
 

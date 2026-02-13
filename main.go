@@ -47,7 +47,15 @@ func main() {
 		info.TableName = inferTableName(info.Name)
 	}
 
+	// Parse peer .go files in the same directory to provide struct metadata
+	// for join scan field lookups (e.g. belongs_to target in another file).
+	peerInfos := parsePeerFiles(filepath.Dir(*source), filepath.Base(*source))
+	for _, info := range peerInfos {
+		info.TableName = inferTableName(info.Name)
+	}
+
 	var opt gen.RenderOption
+	opt.PeerInfos = peerInfos
 	outDir := filepath.Dir(*source)
 
 	if *destination != "" {
@@ -96,6 +104,31 @@ func resolveImportPath(dir string) (string, error) {
 		return "", fmt.Errorf("parse go list output: %w", err)
 	}
 	return pkg.ImportPath, nil
+}
+
+// parsePeerFiles parses all .go files in dir except excludeBase and returns
+// their StructInfos. Errors are silently ignored (peers are best-effort).
+func parsePeerFiles(dir, excludeBase string) []*gen.StructInfo {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var peers []*gen.StructInfo
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || name == excludeBase {
+			continue
+		}
+		if strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_gen.go") {
+			continue
+		}
+		peerInfos, err := gen.Parse(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		peers = append(peers, peerInfos...)
+	}
+	return peers
 }
 
 // inferTableName converts a CamelCase type name to a snake_case plural table name.

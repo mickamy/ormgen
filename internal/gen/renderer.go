@@ -16,8 +16,9 @@ import (
 
 // RenderOption controls the output of RenderFile.
 type RenderOption struct {
-	DestPkg      string // output package name (empty = same as source)
-	SourceImport string // import path for source package (required when DestPkg is set)
+	DestPkg      string        // output package name (empty = same as source)
+	SourceImport string        // import path for source package (required when DestPkg is set)
+	PeerInfos    []*StructInfo // other structs in the same package (for join scan field lookups)
 }
 
 // Render generates the Go source code for a single StructInfo.
@@ -45,6 +46,15 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		typePrefix = parts[len(parts)-1] + "."
 	}
 
+	// allInfos includes both the structs to render and peer structs from the
+	// same package. Peers are used only for join scan field lookups.
+	allInfos := infos
+	if len(opt.PeerInfos) > 0 {
+		allInfos = make([]*StructInfo, 0, len(infos)+len(opt.PeerInfos))
+		allInfos = append(allInfos, infos...)
+		allInfos = append(allInfos, opt.PeerInfos...)
+	}
+
 	structs := make([]templateData, 0, len(infos))
 	var allExtraImports []importEntry
 	seenImports := make(map[string]bool)
@@ -59,7 +69,7 @@ func RenderFile(infos []*StructInfo, opt RenderOption) ([]byte, error) {
 		updatedAtFields := filterFields(info.Fields, func(f FieldInfo) bool { return f.UpdatedAt })
 		hasTimestamps := len(createdAtFields) > 0 || len(updatedAtFields) > 0
 
-		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport, opt.DestPkg, infos)
+		relations, extraImports := buildRelationData(info, pk, typePrefix, opt.SourceImport, opt.DestPkg, allInfos)
 		for _, ei := range extraImports {
 			if !seenImports[ei.Path] {
 				seenImports[ei.Path] = true

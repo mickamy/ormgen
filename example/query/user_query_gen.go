@@ -25,6 +25,7 @@ func Users(db orm.Querier) *orm.Query[model.User] {
 	q.RegisterJoin("Profile", orm.JoinConfig{
 		TargetTable: orm.ResolveTableName[model.Profile]("profiles"), TargetColumn: "user_id",
 		SourceTable: orm.ResolveTableName[model.User]("users"), SourceColumn: "id",
+		SelectColumns: []string{"id", "user_id", "bio"},
 	})
 	q.RegisterPreloader("Profile", preloadUserProfile)
 	q.RegisterPreloader("Tags", preloadUserTags)
@@ -41,6 +42,8 @@ var usersColumns = []string{"id", "name", "email", "created_at"}
 func scanUser(rows *sql.Rows) (model.User, error) {
 	cols, _ := rows.Columns()
 	var v model.User
+	var joinScanProfilePK sql.NullInt64
+	var joinScanProfile model.Profile
 	dest := make([]any, len(cols))
 	for i, col := range cols {
 		switch col {
@@ -52,11 +55,21 @@ func scanUser(rows *sql.Rows) (model.User, error) {
 			dest[i] = &v.Email
 		case "created_at":
 			dest[i] = &v.CreatedAt
+		case "Profile__id":
+			dest[i] = &joinScanProfilePK
+		case "Profile__user_id":
+			dest[i] = &joinScanProfile.UserID
+		case "Profile__bio":
+			dest[i] = &joinScanProfile.Bio
 		default:
 			dest[i] = new(any)
 		}
 	}
 	err := rows.Scan(dest...)
+	if joinScanProfilePK.Valid {
+		joinScanProfile.ID = int(joinScanProfilePK.Int64)
+		v.Profile = &joinScanProfile
+	}
 	return v, err
 }
 
