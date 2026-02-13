@@ -516,7 +516,7 @@ func TestBuildSelectWithScopeJoin(t *testing.T) {
 	if !strings.Contains(got.SQL, "INNER JOIN") {
 		t.Errorf("SQL should contain INNER JOIN: %q", got.SQL)
 	}
-	want := "SELECT `id`, `name` FROM `users` INNER JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
+	want := "SELECT `users`.`id`, `users`.`name` FROM `users` INNER JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
 	if got.SQL != want {
 		t.Errorf("SQL = %q, want %q", got.SQL, want)
 	}
@@ -540,7 +540,7 @@ func TestBuildSelectWithScopeLeftJoin(t *testing.T) {
 	if !strings.Contains(got.SQL, "LEFT JOIN") {
 		t.Errorf("SQL should contain LEFT JOIN: %q", got.SQL)
 	}
-	want := "SELECT `id`, `name` FROM `users` LEFT JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
+	want := "SELECT `users`.`id`, `users`.`name` FROM `users` LEFT JOIN `posts` ON `posts`.`user_id` = `users`.`id`"
 	if got.SQL != want {
 		t.Errorf("SQL = %q, want %q", got.SQL, want)
 	}

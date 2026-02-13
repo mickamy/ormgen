@@ -514,12 +514,24 @@ func (q *Query[T]) quoteColumns(cols []string) string {
 	return strings.Join(quoted, ", ")
 }
 
+// qualifiedColumns returns column names qualified with the table name.
+// Used when JOINs are present to avoid ambiguous column references.
+func (q *Query[T]) qualifiedColumns() string {
+	quoted := make([]string, len(q.columns))
+	for i, c := range q.columns {
+		quoted[i] = q.qi(q.table) + "." + q.qi(c)
+	}
+	return strings.Join(quoted, ", ")
+}
+
 func (q *Query[T]) buildSelect() (string, []any) {
 	var b strings.Builder
 	b.WriteString("SELECT ")
 
 	if q.selects != nil {
 		b.WriteString(*q.selects)
+	} else if len(q.joins) > 0 {
+		b.WriteString(q.qualifiedColumns())
 	} else {
 		b.WriteString(q.quoteColumns(q.columns))
 	}
