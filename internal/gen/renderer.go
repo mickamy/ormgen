@@ -179,6 +179,7 @@ type relationTemplateData struct {
 	JoinTargetColumn string
 	JoinSourceTable  string
 	JoinSourceColumn string
+	FKIsPointer      bool   // true if the foreign key field is a pointer type (e.g. *string)
 	JoinTable        string // many_to_many only: "user_tags"
 	References       string // many_to_many only: "tag_id"
 	TargetTable      string // many_to_many only: target table name "tags"
@@ -466,10 +467,19 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	if len(results) == 0 {
 		return nil
 	}
+	{{- if .FKIsPointer}}
+	ids := make([]{{.KeyType}}, 0, len(results))
+	for i := range results {
+		if results[i].{{.ForeignKeyField}} != nil {
+			ids = append(ids, *results[i].{{.ForeignKeyField}})
+		}
+	}
+	{{- else}}
 	ids := make([]{{.KeyType}}, len(results))
 	for i := range results {
 		ids[i] = results[i].{{.ForeignKeyField}}
 	}
+	{{- end}}
 	related, err := {{.TargetFactory}}(db).Scopes(scope.In("id", ids)).All(ctx)
 	if err != nil {
 		return err
@@ -486,7 +496,13 @@ func {{.PreloaderName}}(ctx context.Context, db orm.Querier, results []{{.Parent
 	}
 	{{- end}}
 	for i := range results {
+		{{- if .FKIsPointer}}
+		if results[i].{{.ForeignKeyField}} != nil {
+			results[i].{{.FieldName}} = byPK[*results[i].{{.ForeignKeyField}}]
+		}
+		{{- else}}
 		results[i].{{.FieldName}} = byPK[results[i].{{.ForeignKeyField}}]
+		{{- end}}
 	}
 	return nil
 }
@@ -572,7 +588,12 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 			rd.TargetTable = targetTable
 			rd.TargetPKColumn = "id" // convention
 		default: // belongs_to
-			rd.KeyType = lookupFieldType(info, rel.ForeignKey)
+			fkType := lookupFieldType(info, rel.ForeignKey)
+			if strings.HasPrefix(fkType, "*") {
+				rd.FKIsPointer = true
+				fkType = fkType[1:]
+			}
+			rd.KeyType = fkType
 			rd.JoinTargetTable = targetTable
 			rd.JoinTargetColumn = "id" // convention: target PK is "id"
 			rd.JoinSourceTable = info.TableName

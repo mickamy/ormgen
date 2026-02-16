@@ -10,7 +10,7 @@ var commonInitialisms = map[string]string{
 	"id": "ID", "url": "URL", "api": "API", "http": "HTTP",
 	"json": "JSON", "xml": "XML", "sql": "SQL", "html": "HTML",
 	"ip": "IP", "tcp": "TCP", "udp": "UDP", "uuid": "UUID",
-	"oauth": "OAuth",
+	"oauth": "OAuth", "qr": "QR",
 }
 
 // SnakeToCamel converts a snake_case string to CamelCase.
@@ -54,7 +54,7 @@ func CamelToSnake(s string) string {
 				if i+1 < len(runes) {
 					next = runes[i+1]
 				}
-				if unicode.IsLower(prev) || (unicode.IsUpper(prev) && unicode.IsLower(next)) {
+				if unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && unicode.IsLower(next)) {
 					b.WriteByte('_')
 				}
 			}

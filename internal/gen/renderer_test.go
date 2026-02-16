@@ -177,6 +177,7 @@ func TestRenderRelations(t *testing.T) {
 	findStruct(t, infos, "Article").TableName = "articles"
 	findStruct(t, infos, "Profile").TableName = "profiles"
 	findStruct(t, infos, "Tag").TableName = "tags"
+	findStruct(t, infos, "Comment").TableName = "comments"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {
@@ -227,12 +228,23 @@ func TestRenderRelations(t *testing.T) {
 		// Imports
 		`"context"`,
 		`"github.com/mickamy/ormgen/scope"`,
+		// Nullable FK belongs_to (Comment.Author with *string FK)
+		"func preloadCommentAuthor(ctx context.Context, db orm.Querier, results []Comment)",
+		// Should dereference pointer FK
+		"if results[i].AuthorID != nil {",
+		"ids = append(ids, *results[i].AuthorID)",
+		// Map key should be string, not *string
+		"byPK := make(map[string]*Author)",
+		// Assignment should check nil
+		"results[i].Author = byPK[*results[i].AuthorID]",
 	}
 	// many_to_many should NOT generate RegisterJoin
 	negativeChecks := []string{
 		`q.RegisterJoin("Tags"`,
 		// Non-pointer belongs_to should NOT use pointer map
 		"map[int]*Author",
+		// Nullable FK should NOT use pointer as map key
+		"map[*string]",
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
@@ -351,6 +363,7 @@ func TestRenderJoinScan(t *testing.T) {
 	findStruct(t, infos, "Article").TableName = "articles"
 	findStruct(t, infos, "Profile").TableName = "profiles"
 	findStruct(t, infos, "Tag").TableName = "tags"
+	findStruct(t, infos, "Comment").TableName = "comments"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {

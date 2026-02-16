@@ -29,3 +29,11 @@ type Article struct {
 	// belongs_to: Article belongs to Author
 	Author Author `rel:"belongs_to,foreign_key:author_id"`
 }
+
+type Comment struct {
+	ID       int
+	AuthorID *string `db:"author_id"`
+	Body     string
+	// belongs_to with nullable FK
+	Author *Author `rel:"belongs_to,foreign_key:author_id"`
+}
