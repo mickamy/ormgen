@@ -33,6 +33,7 @@ func Users(db orm.Querier) *orm.Query[model.User] {
 		[]string{"created_at"},
 		setUserCreatedAt,
 		nil,
+		nil,
 	)
 	return q
 }

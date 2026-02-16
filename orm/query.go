@@ -70,6 +70,7 @@ type Query[T any] struct {
 	preloads       []string
 
 	createdAtCols []string
+	updatedAtCols []string
 	setCreatedAt  SetCreatedAtFunc[T]
 	setUpdatedAt  SetUpdatedAtFunc[T]
 }
@@ -119,9 +120,10 @@ func (q *Query[T]) RegisterPreloader(name string, fn PreloaderFunc[T]) {
 // RegisterTimestamps configures automatic timestamp management.
 func (q *Query[T]) RegisterTimestamps(
 	createdAtCols []string, setCreatedAt SetCreatedAtFunc[T],
-	setUpdatedAt SetUpdatedAtFunc[T],
+	updatedAtCols []string, setUpdatedAt SetUpdatedAtFunc[T],
 ) {
 	q.createdAtCols = createdAtCols
+	q.updatedAtCols = updatedAtCols
 	q.setCreatedAt = setCreatedAt
 	q.setUpdatedAt = setUpdatedAt
 }
@@ -489,6 +491,42 @@ func (q *Query[T]) Update(ctx context.Context, t *T) error {
 	return err //nolint:wrapcheck // pass through
 }
 
+// Updates updates specific columns by map for rows matching the accumulated
+// WHERE clauses. Returns an error if no WHERE clauses are set (safety guard).
+// If updatedAt columns are registered and not present in values, they are
+// automatically added with the current time.
+func (q *Query[T]) Updates(ctx context.Context, values map[string]any) error {
+	if len(q.wheres) == 0 {
+		return errors.New("orm: Updates without WHERE clause is not allowed")
+	}
+
+	if len(q.updatedAtCols) > 0 {
+		n := now(ctx)
+		for _, col := range q.updatedAtCols {
+			if _, ok := values[col]; !ok {
+				values[col] = n
+			}
+		}
+	}
+
+	setCols := make([]string, 0, len(values))
+	setVals := make([]any, 0, len(values))
+	for col, val := range values {
+		setCols = append(setCols, col)
+		setVals = append(setVals, val)
+	}
+
+	var b strings.Builder
+	b.WriteString(q.buildUpdateMap(setCols))
+	whereArgs := q.appendWhere(&b)
+	setVals = append(setVals, whereArgs...)
+
+	query, args := q.rewrite(b.String(), setVals)
+
+	_, err := q.db.ExecContext(ctx, query, args...)
+	return err //nolint:wrapcheck // pass through
+}
+
 // Delete deletes rows matching the accumulated WHERE clauses.
 // Returns an error if no WHERE clauses are set (safety guard).
 func (q *Query[T]) Delete(ctx context.Context) error {
@@ -679,6 +717,18 @@ func (q *Query[T]) buildUpdate(setCols []string) string {
 		q.qi(q.table),
 		strings.Join(sets, ", "),
 		q.qi(q.pk),
+	)
+}
+
+func (q *Query[T]) buildUpdateMap(setCols []string) string {
+	sets := make([]string, len(setCols))
+	for i, col := range setCols {
+		sets[i] = q.qi(col) + " = ?"
+	}
+	return fmt.Sprintf(
+		"UPDATE %s SET %s",
+		q.qi(q.table),
+		strings.Join(sets, ", "),
 	)
 }
 

@@ -213,6 +213,14 @@ func (d templateData) CreatedAtColumns() []string {
 	return cols
 }
 
+func (d templateData) UpdatedAtColumns() []string {
+	cols := make([]string, len(d.UpdatedAtFields))
+	for i, f := range d.UpdatedAtFields {
+		cols[i] = f.Column
+	}
+	return cols
+}
+
 var funcMap = template.FuncMap{
 	"join": strings.Join,
 	"quote": func(s string) string {
@@ -274,6 +282,7 @@ func {{.FactoryName}}(db orm.Querier) *orm.Query[{{.TypeName}}] {
 	q.RegisterTimestamps(
 		{{if .CreatedAtFields}}[]string{ {{- range $i, $c := .CreatedAtColumns}}{{if $i}}, {{end}}{{quote $c}}{{end -}} }{{else}}nil{{end}},
 		{{if .CreatedAtFields}}{{.SetCreatedAtFunc}}{{else}}nil{{end}},
+		{{if .UpdatedAtFields}}[]string{ {{- range $i, $c := .UpdatedAtColumns}}{{if $i}}, {{end}}{{quote $c}}{{end -}} }{{else}}nil{{end}},
 		{{if .UpdatedAtFields}}{{.SetUpdatedAtFunc}}{{else}}nil{{end}},
 	)
 	{{- end}}

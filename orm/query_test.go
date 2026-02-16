@@ -376,7 +376,7 @@ func setTestArticleUpdatedAt(a *testArticle, now time.Time) {
 
 func newTestArticleQuery(tq *orm.TestQuerier) *orm.Query[testArticle] {
 	q := orm.NewQuery[testArticle](tq, "articles", testArticleColumns, "id", scanTestArticle, testArticleColValPairs, setTestArticlePK)
-	q.RegisterTimestamps([]string{"created_at"}, setTestArticleCreatedAt, setTestArticleUpdatedAt)
+	q.RegisterTimestamps([]string{"created_at"}, setTestArticleCreatedAt, []string{"updated_at"}, setTestArticleUpdatedAt)
 	return q
 }
 
@@ -629,5 +629,100 @@ func TestBuildSelectWithScopePreload(t *testing.T) {
 	want := "SELECT `id`, `name` FROM `users`"
 	if got.SQL != want {
 		t.Errorf("SQL = %q, want %q (preload should not alter SQL)", got.SQL, want)
+	}
+}
+
+// --- Updates ---
+
+func TestUpdates(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+
+	err := q.Where("id = ?", 123).Updates(t.Context(), map[string]any{
+		"name": "new name",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := tq.LastQuery()
+	want := "UPDATE `users` SET `name` = ? WHERE id = ?"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+	if len(got.Args) != 2 || got.Args[0] != "new name" || got.Args[1] != 123 {
+		t.Errorf("Args = %v", got.Args)
+	}
+}
+
+func TestUpdatesPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.PostgreSQL)
+	q := newTestQuery(tq)
+
+	err := q.Where("id = ?", 123).Updates(t.Context(), map[string]any{
+		"name": "new name",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := tq.LastQuery()
+	want := `UPDATE "users" SET "name" = $1 WHERE id = $2`
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestUpdatesAutoUpdatedAt(t *testing.T) {
+	t.Parallel()
+
+	fixed := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	ctx := orm.WithClock(t.Context(), fixedClock{t: fixed})
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestArticleQuery(tq)
+
+	err := q.Where("id = ?", 1).Updates(ctx, map[string]any{
+		"title": "updated title",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := tq.LastQuery()
+	// Should contain both title and updated_at in SET clause
+	if !strings.Contains(got.SQL, "`updated_at` = ?") {
+		t.Errorf("SQL should contain updated_at: %q", got.SQL)
+	}
+	if !strings.Contains(got.SQL, "`title` = ?") {
+		t.Errorf("SQL should contain title: %q", got.SQL)
+	}
+
+	// Verify updated_at value is the fixed time
+	foundUpdatedAt := false
+	for _, arg := range got.Args {
+		if ts, ok := arg.(time.Time); ok && ts.Equal(fixed) {
+			foundUpdatedAt = true
+			break
+		}
+	}
+	if !foundUpdatedAt {
+		t.Errorf("Args should contain fixed time %v: %v", fixed, got.Args)
+	}
+}
+
+func TestUpdatesWithoutWhereReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+
+	err := q.Updates(t.Context(), map[string]any{"name": "oops"})
+	if err == nil {
+		t.Fatal("expected error for Updates without WHERE, got nil")
 	}
 }

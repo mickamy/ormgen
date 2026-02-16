@@ -304,6 +304,9 @@ func TestRenderTimestamps(t *testing.T) {
 		// createdAt column list
 		`"created_at"`,
 		`"inserted_at"`,
+		// updatedAt column list (new: updatedAtCols passed to RegisterTimestamps)
+		`"updated_at"`,
+		`"modified_at"`,
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
