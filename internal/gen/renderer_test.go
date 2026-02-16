@@ -178,6 +178,7 @@ func TestRenderRelations(t *testing.T) {
 	findStruct(t, infos, "Profile").TableName = "profiles"
 	findStruct(t, infos, "Tag").TableName = "tags"
 	findStruct(t, infos, "Comment").TableName = "comments"
+	findStruct(t, infos, "QRImage").TableName = "qr_images"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {
@@ -245,6 +246,8 @@ func TestRenderRelations(t *testing.T) {
 		"map[int]*Author",
 		// Nullable FK should NOT use pointer as map key
 		"map[*string]",
+		// QRImage FK field should NOT be resolved via SnakeToCamel (which would give "AuthorId")
+		"results[i].AuthorId",
 	}
 	for _, want := range checks {
 		if !strings.Contains(code, want) {
@@ -364,6 +367,7 @@ func TestRenderJoinScan(t *testing.T) {
 	findStruct(t, infos, "Profile").TableName = "profiles"
 	findStruct(t, infos, "Tag").TableName = "tags"
 	findStruct(t, infos, "Comment").TableName = "comments"
+	findStruct(t, infos, "QRImage").TableName = "qr_images"
 
 	src, err := gen.RenderFile(infos, gen.RenderOption{})
 	if err != nil {

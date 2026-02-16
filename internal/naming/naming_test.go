@@ -20,7 +20,6 @@ func TestSnakeToCamel(t *testing.T) {
 		{"http_server", "HTTPServer"},
 		{"oauth_token", "OAuthToken"},
 		{"user_oauth_accounts", "UserOAuthAccounts"},
-		{"qr_image_id", "QRImageID"},
 		{"", ""},
 	}
 
@@ -52,7 +51,8 @@ func TestCamelToSnake(t *testing.T) {
 		{"UserOAuthAccount", "user_oauth_account"},
 		{"userProfile", "user_profile"},
 		{"S3Object", "s3_object"},
-		{"QRImageID", "qr_image_id"},
+		{"QRImageID", "qr_image_id"},  // digit boundary + acronym
+		{"QrImageId", "qr_image_id"},  // non-acronym variant also works
 		{"EC2Instance", "ec2_instance"},
 		{"A", "a"},
 		{"", ""},

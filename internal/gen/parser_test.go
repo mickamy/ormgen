@@ -296,8 +296,8 @@ func TestParseRelations(t *testing.T) { //nolint:gocyclo // test function with m
 		t.Fatalf("Parse: %v", err)
 	}
 
-	if len(infos) != 5 {
-		t.Fatalf("len(infos) = %d, want 5", len(infos))
+	if len(infos) != 6 {
+		t.Fatalf("len(infos) = %d, want 6", len(infos))
 	}
 
 	t.Run("Author has_many Articles, has_one Profile, many_to_many Tags", func(t *testing.T) {

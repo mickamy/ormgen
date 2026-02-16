@@ -522,7 +522,12 @@ func buildRelationData(info *StructInfo, pk *FieldInfo, typePrefix, sourceImport
 	for _, rel := range info.Relations {
 		targetTable := inflection.Plural(naming.CamelToSnake(rel.TargetType))
 		targetFactory := naming.SnakeToCamel(targetTable)
-		fkField := naming.SnakeToCamel(rel.ForeignKey)
+
+		// Resolve the Go field name for the FK column by looking it up in the
+		// struct that owns the column, rather than guessing via SnakeToCamel.
+		// This correctly handles acronyms like QRImageID without needing a
+		// comprehensive initialism list.
+		fkField := resolveFieldName(rel, info, allInfos)
 
 		// Determine type prefix for the target type.
 		targetTypePrefix := typePrefix
@@ -657,6 +662,36 @@ func replaceLastSegment(importPath, newSeg string) string {
 		return newSeg
 	}
 	return importPath[:i+1] + newSeg
+}
+
+// resolveFieldName returns the Go field name for the FK column by looking it
+// up in the struct that owns the column. Falls back to SnakeToCamel when the
+// owning struct is not available (e.g. cross-package target).
+func resolveFieldName(rel RelationInfo, parentInfo *StructInfo, allInfos []*StructInfo) string {
+	switch rel.RelType {
+	case "belongs_to":
+		// FK column is on the parent struct.
+		if name := lookupFieldName(parentInfo, rel.ForeignKey); name != "" {
+			return name
+		}
+	case "has_many", "has_one":
+		// FK column is on the target struct.
+		if targetInfo := findStructInfo(allInfos, rel.TargetType); targetInfo != nil {
+			if name := lookupFieldName(targetInfo, rel.ForeignKey); name != "" {
+				return name
+			}
+		}
+	}
+	return naming.SnakeToCamel(rel.ForeignKey) // fallback
+}
+
+func lookupFieldName(info *StructInfo, column string) string {
+	for _, f := range info.Fields {
+		if f.Column == column {
+			return f.Name
+		}
+	}
+	return ""
 }
 
 func lookupFieldType(info *StructInfo, column string) string {

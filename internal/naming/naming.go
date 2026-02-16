@@ -10,7 +10,7 @@ var commonInitialisms = map[string]string{
 	"id": "ID", "url": "URL", "api": "API", "http": "HTTP",
 	"json": "JSON", "xml": "XML", "sql": "SQL", "html": "HTML",
 	"ip": "IP", "tcp": "TCP", "udp": "UDP", "uuid": "UUID",
-	"oauth": "OAuth", "qr": "QR",
+	"oauth": "OAuth",
 }
 
 // SnakeToCamel converts a snake_case string to CamelCase.

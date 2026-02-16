@@ -37,3 +37,12 @@ type Comment struct {
 	// belongs_to with nullable FK
 	Author *Author `rel:"belongs_to,foreign_key:author_id"`
 }
+
+// QRImage tests acronym field names resolved by struct lookup, not SnakeToCamel.
+type QRImage struct {
+	ID       int
+	AuthorID int `db:"author_id"`
+	URL      string
+	// belongs_to: FK field name should be "AuthorID" (not "AuthorId")
+	Author Author `rel:"belongs_to,foreign_key:author_id"`
+}
