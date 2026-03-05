@@ -715,6 +715,70 @@ func TestUpdatesAutoUpdatedAt(t *testing.T) {
 	}
 }
 
+// --- FOR UPDATE ---
+
+func TestBuildSelectForUpdate(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+
+	_, _ = q.Where("id = ?", 1).ForUpdate().All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `id`, `name` FROM `users` WHERE id = ? FOR UPDATE"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectForUpdatePostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.PostgreSQL)
+	q := newTestQuery(tq)
+
+	_, _ = q.Where("id = ?", 1).ForUpdate().All(t.Context())
+
+	got := tq.LastQuery()
+	want := `SELECT "id", "name" FROM "users" WHERE id = $1 FOR UPDATE`
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestBuildSelectForUpdateWithScope(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	q := newTestQuery(tq)
+
+	_, _ = q.Scopes(scope.Where("id = ?", 1), scope.ForUpdate()).All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `id`, `name` FROM `users` WHERE id = ? FOR UPDATE"
+	if got.SQL != want {
+		t.Errorf("SQL = %q, want %q", got.SQL, want)
+	}
+}
+
+func TestForUpdateImmutability(t *testing.T) {
+	t.Parallel()
+
+	tq := orm.NewTestQuerier(orm.MySQL)
+	base := newTestQuery(tq)
+
+	_ = base.ForUpdate()
+
+	_, _ = base.All(t.Context())
+
+	got := tq.LastQuery()
+	want := "SELECT `id`, `name` FROM `users`"
+	if got.SQL != want {
+		t.Errorf("base query was mutated: SQL = %q, want %q", got.SQL, want)
+	}
+}
+
 func TestUpdatesWithoutWhereReturnsError(t *testing.T) {
 	t.Parallel()
 

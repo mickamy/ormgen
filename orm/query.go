@@ -61,8 +61,9 @@ type Query[T any] struct {
 	orderBys []string
 	joins    []string
 	selects  *string
-	limit    *int
-	offset   *int
+	limit     *int
+	offset    *int
+	forUpdate bool
 
 	joinDefs       map[string]JoinConfig
 	activeJoinNames []string
@@ -171,6 +172,13 @@ func (q *Query[T]) Select(columns string) *Query[T] {
 	return q2
 }
 
+// ForUpdate appends FOR UPDATE to the SELECT query for pessimistic locking.
+func (q *Query[T]) ForUpdate() *Query[T] {
+	q2 := q.clone()
+	q2.forUpdate = true
+	return q2
+}
+
 // Join adds an INNER JOIN for the named relation.
 func (q *Query[T]) Join(name string) *Query[T] {
 	return q.addJoin("INNER JOIN", name)
@@ -236,6 +244,7 @@ func (q *Query[T]) ApplySelect(columns string) {
 	q.selects = &columns
 }
 
+func (q *Query[T]) ApplyForUpdate()            { q.forUpdate = true }
 func (q *Query[T]) ApplyJoin(name string)     { q.applyJoin("INNER JOIN", name) }
 func (q *Query[T]) ApplyLeftJoin(name string)  { q.applyJoin("LEFT JOIN", name) }
 func (q *Query[T]) ApplyPreload(name string)   { q.preloads = append(q.preloads, name) }
@@ -609,6 +618,10 @@ func (q *Query[T]) buildSelect() (string, []any) {
 	}
 	if q.offset != nil {
 		fmt.Fprintf(&b, " OFFSET %d", *q.offset)
+	}
+
+	if q.forUpdate {
+		b.WriteString(" FOR UPDATE")
 	}
 
 	return b.String(), args

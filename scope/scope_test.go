@@ -16,6 +16,7 @@ type mockApplier struct {
 	preloads  []string
 	limit     *int
 	offset    *int
+	forUpdate bool
 }
 
 type appliedWhere struct {
@@ -33,6 +34,7 @@ func (m *mockApplier) ApplySelect(columns string) { m.selects = append(m.selects
 func (m *mockApplier) ApplyJoin(name string)      { m.joins = append(m.joins, name) }
 func (m *mockApplier) ApplyLeftJoin(name string)   { m.leftJoins = append(m.leftJoins, name) }
 func (m *mockApplier) ApplyPreload(name string)    { m.preloads = append(m.preloads, name) }
+func (m *mockApplier) ApplyForUpdate()              { m.forUpdate = true }
 
 func TestWhere(t *testing.T) {
 	t.Parallel()
@@ -250,6 +252,17 @@ func TestPreload(t *testing.T) {
 
 	if len(m.preloads) != 1 || m.preloads[0] != "Posts" {
 		t.Errorf("preloads = %v, want [Posts]", m.preloads)
+	}
+}
+
+func TestForUpdate(t *testing.T) {
+	t.Parallel()
+
+	m := &mockApplier{}
+	scope.ForUpdate().Apply(m)
+
+	if !m.forUpdate {
+		t.Error("forUpdate = false, want true")
 	}
 }
 

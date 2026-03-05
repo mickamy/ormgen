@@ -14,6 +14,7 @@ type Applier interface {
 	ApplyJoin(name string)
 	ApplyLeftJoin(name string)
 	ApplyPreload(name string)
+	ApplyForUpdate()
 }
 
 type scopeKind int
@@ -27,6 +28,7 @@ const (
 	kindJoin
 	kindLeftJoin
 	kindPreload
+	kindForUpdate
 )
 
 // Scope represents a single query condition fragment.
@@ -57,6 +59,8 @@ func (s Scope) Apply(a Applier) {
 		a.ApplyLeftJoin(s.clause)
 	case kindPreload:
 		a.ApplyPreload(s.clause)
+	case kindForUpdate:
+		a.ApplyForUpdate()
 	}
 }
 
@@ -105,6 +109,11 @@ func LeftJoin(name string) Scope {
 // Preload returns a Scope that registers a relation for eager loading.
 func Preload(name string) Scope {
 	return Scope{kind: kindPreload, clause: name}
+}
+
+// ForUpdate returns a Scope that appends FOR UPDATE to the SELECT query.
+func ForUpdate() Scope {
+	return Scope{kind: kindForUpdate}
 }
 
 // In returns a WHERE scope with an IN clause, expanding the slice into
