@@ -11,7 +11,11 @@ A lightweight, type-safe ORM for Go — powered by code generation and generics,
 - **MySQL & PostgreSQL** — dialect abstraction handles placeholder style, identifier quoting, and `RETURNING`
 - **Relations** — `has_many`, `has_one`, `belongs_to`, `many_to_many` with eager loading (Preload) and JOIN support
 - **Scopes** — composable, reusable query fragments (`Where`, `OrderBy`, `Limit`, `Offset`, `In`)
+- **Automatic timestamps** — opt-in `CreatedAt` / `UpdatedAt` auto-setting on Create/Update
+- **Pessimistic locking** — `ForUpdate()` for `SELECT ... FOR UPDATE`
 - **Transactions** — `DB.Transaction` with automatic commit/rollback/panic-recovery
+- **Query logging** — `db.Debug(logger)` logs every executed query
+- **Testable clock** — `orm.WithClock(ctx, clock)` for deterministic timestamp testing
 
 ## Philosophy
 
@@ -21,7 +25,7 @@ ormgen is for developers who want to **write SQL-aware Go code without the boile
 |-------------|-------------------------------------|----------------------------|----------------------------------|
 | Approach    | Runtime reflection                  | SQL-first codegen          | Struct-first codegen             |
 | Input       | Go structs + conventions            | `.sql` files               | Go structs + tags                |
-| Magic       | Hooks, soft delete, auto-timestamps | None                       | None                             |
+| Magic       | Hooks, soft delete, auto-timestamps | None                       | Opt-in auto-timestamps only      |
 | Debugging   | Trace callbacks                     | Read the SQL               | Read the generated Go code       |
 
 **Why not gorm?**
@@ -40,7 +44,7 @@ single `FindAll(ctx, scopes...)` method covers all of these combinations at the 
 **What ormgen is not:**
 
 - Not a migration tool — use other tools, or plain SQL
-- Not a full-featured ORM — no auto-timestamps, no soft delete, no callback hooks
+- Not a full-featured ORM — no soft delete, no callback hooks
 - Not magic — if something happens, it's because your code explicitly asked for it
 
 ## Installation
@@ -149,9 +153,17 @@ func main() {
     count, _ := query.Users(db).Count(ctx)
     exists, _ := query.Users(db).Where("email = ?", "alice@example.com").Exists(ctx)
 
-    // Update
+    // Update (all columns)
     user.Name = "Alice Updated"
     query.Users(db).Update(ctx, &user)
+
+    // Partial update (specific columns only)
+    query.Users(db).Where("id = ?", u.ID).Updates(ctx, map[string]any{
+        "name": "Alice Partial",
+    })
+
+    // Pessimistic lock
+    user, _ = query.Users(db).Where("id = ?", u.ID).ForUpdate().First(ctx)
 
     // Delete
     query.Users(db).Where("id = ?", u.ID).Delete(ctx)
@@ -208,6 +220,7 @@ func main() {
 | `Join(name)`             | INNER JOIN on named relation |
 | `LeftJoin(name)`         | LEFT JOIN on named relation  |
 | `Preload(name)`          | Eager load named relation    |
+| `ForUpdate()`            | Append FOR UPDATE (row lock) |
 | `Scopes(scopes...)`      | Apply reusable scope objects |
 
 ### Terminal methods (execute query)
@@ -221,7 +234,8 @@ func main() {
 | `Create(ctx, *T)`      | Insert and populate PK                                     |
 | `CreateAll(ctx, []*T)` | Batch insert and populate PKs                              |
 | `Upsert(ctx, *T)`      | Insert or update on PK conflict                            |
-| `Update(ctx, *T)`      | Update by PK                                               |
+| `Update(ctx, *T)`      | Update all columns by PK                                   |
+| `Updates(ctx, map)`    | Partial update by column map (requires WHERE)              |
 | `Delete(ctx)`          | Delete matching rows (requires WHERE)                      |
 
 ## Scopes
@@ -241,6 +255,11 @@ users, _ := query.Users(db).Scopes(active, recent).Scopes(page...).All(ctx)
 // Generic In
 ids := []int{1, 2, 3}
 users, _ := query.Users(db).Scopes(scope.In("id", ids)).All(ctx)
+
+// Pessimistic locking (SELECT ... FOR UPDATE)
+user, _ := query.Users(db).Where("id = ?", 1).ForUpdate().First(ctx)
+// or via scope
+user, _ = query.Users(db).Scopes(scope.Where("id = ?", 1), scope.ForUpdate()).First(ctx)
 ```
 
 ### Why scopes matter — the Repository pattern
@@ -284,6 +303,44 @@ users, _ := repo.List(ctx,
     scope.Limit(20),
     scope.Offset(page * 20),
 )
+```
+
+## Query Logging
+
+`Debug` returns a new `*DB` that logs every query via the `orm.Logger` interface:
+
+```go
+type queryLogger struct{}
+
+func (queryLogger) Log(ctx context.Context, query string, args ...any) {
+    log.Printf("SQL: %s | args: %v", query, args)
+}
+
+db := orm.New(sqlDB, orm.MySQL).Debug(queryLogger{})
+```
+
+The original `db` is not modified — `Debug` returns an immutable copy.
+
+## Automatic Timestamps
+
+Fields named `CreatedAt` and `UpdatedAt` (with type `time.Time`) are automatically managed:
+
+- **Create / CreateAll** — sets both `CreatedAt` (if zero) and `UpdatedAt`
+- **Update** — sets only `UpdatedAt`
+- **Updates** — auto-appends `updated_at` to the column map if not already present
+- **Upsert** — sets both on insert; excludes `CreatedAt` from the ON CONFLICT UPDATE clause
+
+### Testable Clock
+
+Use `orm.WithClock` to inject a fixed clock for deterministic tests:
+
+```go
+type fixedClock struct{ t time.Time }
+func (c fixedClock) Now() time.Time { return c.t }
+
+ctx := orm.WithClock(context.Background(), fixedClock{t: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)})
+query.Users(db).Create(ctx, &user)
+// user.CreatedAt == 2025-01-01 00:00:00 UTC
 ```
 
 ## CLI
