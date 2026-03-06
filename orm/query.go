@@ -63,7 +63,8 @@ type Query[T any] struct {
 	selects  *string
 	limit     *int
 	offset    *int
-	forUpdate bool
+	forUpdate           bool
+	forUpdateSkipLocked bool
 
 	joinDefs       map[string]JoinConfig
 	activeJoinNames []string
@@ -179,6 +180,14 @@ func (q *Query[T]) ForUpdate() *Query[T] {
 	return q2
 }
 
+// ForUpdateSkipLocked appends FOR UPDATE SKIP LOCKED to the SELECT query.
+// Rows locked by other transactions are skipped instead of blocking.
+func (q *Query[T]) ForUpdateSkipLocked() *Query[T] {
+	q2 := q.clone()
+	q2.forUpdateSkipLocked = true
+	return q2
+}
+
 // Join adds an INNER JOIN for the named relation.
 func (q *Query[T]) Join(name string) *Query[T] {
 	return q.addJoin("INNER JOIN", name)
@@ -245,6 +254,7 @@ func (q *Query[T]) ApplySelect(columns string) {
 }
 
 func (q *Query[T]) ApplyForUpdate()            { q.forUpdate = true }
+func (q *Query[T]) ApplyForUpdateSkipLocked()  { q.forUpdateSkipLocked = true }
 func (q *Query[T]) ApplyJoin(name string)     { q.applyJoin("INNER JOIN", name) }
 func (q *Query[T]) ApplyLeftJoin(name string)  { q.applyJoin("LEFT JOIN", name) }
 func (q *Query[T]) ApplyPreload(name string)   { q.preloads = append(q.preloads, name) }
@@ -620,7 +630,9 @@ func (q *Query[T]) buildSelect() (string, []any) {
 		fmt.Fprintf(&b, " OFFSET %d", *q.offset)
 	}
 
-	if q.forUpdate {
+	if q.forUpdateSkipLocked {
+		b.WriteString(" FOR UPDATE SKIP LOCKED")
+	} else if q.forUpdate {
 		b.WriteString(" FOR UPDATE")
 	}
 
