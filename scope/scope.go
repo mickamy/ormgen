@@ -15,6 +15,7 @@ type Applier interface {
 	ApplyLeftJoin(name string)
 	ApplyPreload(name string)
 	ApplyForUpdate()
+	ApplyForUpdateSkipLocked()
 }
 
 type scopeKind int
@@ -29,6 +30,7 @@ const (
 	kindLeftJoin
 	kindPreload
 	kindForUpdate
+	kindForUpdateSkipLocked
 )
 
 // Scope represents a single query condition fragment.
@@ -61,6 +63,8 @@ func (s Scope) Apply(a Applier) {
 		a.ApplyPreload(s.clause)
 	case kindForUpdate:
 		a.ApplyForUpdate()
+	case kindForUpdateSkipLocked:
+		a.ApplyForUpdateSkipLocked()
 	}
 }
 
@@ -114,6 +118,12 @@ func Preload(name string) Scope {
 // ForUpdate returns a Scope that appends FOR UPDATE to the SELECT query.
 func ForUpdate() Scope {
 	return Scope{kind: kindForUpdate}
+}
+
+// ForUpdateSkipLocked returns a Scope that appends FOR UPDATE SKIP LOCKED.
+// Rows locked by other transactions are skipped instead of blocking.
+func ForUpdateSkipLocked() Scope {
+	return Scope{kind: kindForUpdateSkipLocked}
 }
 
 // In returns a WHERE scope with an IN clause, expanding the slice into

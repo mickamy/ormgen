@@ -16,7 +16,8 @@ type mockApplier struct {
 	preloads  []string
 	limit     *int
 	offset    *int
-	forUpdate bool
+	forUpdate           bool
+	forUpdateSkipLocked bool
 }
 
 type appliedWhere struct {
@@ -35,6 +36,7 @@ func (m *mockApplier) ApplyJoin(name string)      { m.joins = append(m.joins, na
 func (m *mockApplier) ApplyLeftJoin(name string)   { m.leftJoins = append(m.leftJoins, name) }
 func (m *mockApplier) ApplyPreload(name string)    { m.preloads = append(m.preloads, name) }
 func (m *mockApplier) ApplyForUpdate()              { m.forUpdate = true }
+func (m *mockApplier) ApplyForUpdateSkipLocked()    { m.forUpdateSkipLocked = true }
 
 func TestWhere(t *testing.T) {
 	t.Parallel()
