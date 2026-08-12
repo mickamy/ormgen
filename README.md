@@ -1,5 +1,8 @@
 # ormgen
 
+> [!IMPORTANT]
+> This repository is archived. Development continues in [kanna](https://github.com/go-kanna/kanna), where ormgen was rebuilt as [`kanna-orm`](https://github.com/go-kanna/kanna#kanna-orm).
+
 A lightweight, type-safe ORM for Go — powered by code generation and generics, with zero runtime reflection.
 
 ## Features
